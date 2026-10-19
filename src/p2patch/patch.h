@@ -88,6 +88,7 @@ void WalkerType_Install(void);
 void CameraLimits_Install(void);
 void ShadowEdge_Install(void);
 void UserData_Install(void);
+void Audio_Install(void);
 BOOL UserData_Relaunch(void);       /* TRUE: police2_niox.exe was started instead */
 const wchar_t *UserData_Dir(void);  /* %LOCALAPPDATA%\Police 2 Community Patch\ or "" */
 void Gameplay_Tick(void);

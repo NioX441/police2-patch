@@ -104,18 +104,113 @@ static void __cdecl SanitizeGroups(void)
     }
 }
 
+/* Injured officers of patrols and checkpoints stayed on the street.
+ *
+ * An officer who loses a fight gets the state "in hospital" (+0x22C = 0x10), the lying
+ * animation and a return time. He is only removed from the street when his team finishes a
+ * case; teams on patrol or at a checkpoint never do, so the officer lay there (with the duty
+ * icon over his head) until he came back from hospital days later. Now injured officers are
+ * taken away after INJURED_TICKS game frames, like officers of other teams.
+ */
+#define PM_STATE        0x22C
+#define PM_IN_HOSPITAL  0x10
+#define SPR_VISIBLE     0x38
+#define INJURED_TICKS   300          /* 10 seconds at 30 game frames per second */
+#define INJURED_SLOTS   256
+
+typedef struct { uint8_t *pm; int ticks; unsigned seen; } Injured;
+static Injured g_injured[INJURED_SLOTS];
+static unsigned g_pass;
+
+static void RemoveInjured(void)
+{
+    void *groups = *(void **)ADDR_GROUPLIST_VAR;
+    if (!groups) return;
+    g_pass++;
+    int ng = ListCount(groups);
+    for (int gi = 0; gi < ng; gi++) {
+        uint8_t *g = ListItem(groups, gi);
+        void *members = FIELD(g, GRP_MEMBERS, void *);
+        if (!members) continue;
+        for (int i = 0; i < ListCount(members); i++) {
+            uint8_t *pm = ListItem(members, i);
+            if (pm[PM_STATE] != PM_IN_HOSPITAL || !pm[SPR_VISIBLE]) continue;
+            Injured *e = NULL, *free = NULL;
+            for (int k = 0; k < INJURED_SLOTS && !e; k++) {
+                if (g_injured[k].pm == pm) e = &g_injured[k];
+                else if (!g_injured[k].pm && !free) free = &g_injured[k];
+            }
+            if (!e) {
+                if (!free) continue;
+                e = free;
+                e->pm = pm;
+                e->ticks = 0;
+            }
+            e->seen = g_pass;
+            if (++e->ticks >= INJURED_TICKS) {
+                pm[SPR_VISIBLE] = 0;
+                e->pm = NULL;
+                Log("Groups: injured officer %p of team %d taken to hospital", pm, FIELD(g, GRP_ID, int));
+            }
+        }
+    }
+    for (int i = 0; i < INJURED_SLOTS; i++)        /* forget officers no longer lying there */
+        if (g_injured[i].pm && g_injured[i].seen != g_pass) g_injured[i].pm = NULL;
+}
+
+static void __cdecl AfterTimerRoutine(void)
+{
+    SanitizeGroups();
+    RemoveInjured();
+}
+
 static __declspec(naked) void Thunk_TimerRoutine(void)
 {
     __asm {
         mov  ecx, ADDR_TimerRoutine
         call ecx
-        call SanitizeGroups
+        call AfterTimerRoutine
+        ret
+    }
+}
+
+/* Teams with an injured officer could still be sent to a crime (TGUIpCrime.CollectUnits).
+   They are no longer listed until everybody is back from hospital. */
+#define CALL_CRIME_LIST_INSERT  0x005D2270   /* TGroupList.Insert(list, index, team)        */
+#define ADDR_TGroupList_Insert  0x005A8638
+
+static int __cdecl TeamInjured(const uint8_t *g)
+{
+    void *members = FIELD(g, GRP_MEMBERS, void *);
+    if (members)
+        for (int i = 0; i < ListCount(members); i++)
+            if (((const uint8_t *)ListItem(members, i))[PM_STATE] == PM_IN_HOSPITAL) return 1;
+    return 0;
+}
+
+static __declspec(naked) void Thunk_CrimeListInsert(void)
+{
+    __asm {
+        push eax
+        push edx
+        push ecx
+        push ecx
+        call TeamInjured
+        add  esp, 4
+        test eax, eax
+        pop  ecx
+        pop  edx
+        pop  eax
+        jnz  skip
+        push ADDR_TGroupList_Insert
+    skip:
         ret
     }
 }
 
 void Groups_Install(void)
 {
+    RedirectCall(CALL_CRIME_LIST_INSERT, ADDR_TGroupList_Insert, (void *)Thunk_CrimeListInsert);
     if (!g_cfg.fixGroupMembership) return;
     if (RedirectCall(CALL_TimerRoutine, ADDR_TimerRoutine, (void *)Thunk_TimerRoutine))
         Log("Team membership fix installed");
