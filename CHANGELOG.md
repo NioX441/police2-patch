@@ -13,6 +13,11 @@ All notable changes of the Police 2 Community Patch.
   8 riot, 9 car theft), Ctrl+Shift+0: random crime.
 
 ### Fixed
+- Officers injured on patrol or at a checkpoint lay on the street (with the duty icon) until
+  they were back from hospital; they are now taken away after 10 seconds.
+- Teams with an officer in hospital were offered when sending units to a crime.
+- No sound when the speakers were switched on after the game had started: the output now
+  follows the Windows default device, and without any device at start the game waits for one.
 - The selection square was missing at the farthest zoom level (the game skipped it below
   zoom 0.75) and near the right and bottom part of the map at the second zoom level (the
   mouse-to-map conversion only worked for part of the map when zoomed out).

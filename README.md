@@ -49,6 +49,8 @@ fixes in memory while the game starts.
 | Traffic jams | Vehicles waiting for each other (typical at crossroads) never moved again and blocked police units. | Deadlock breaker: a vehicle blocked for a long time may pass. |
 | Performance | Moving the camera redraws all static layers, and the sprite engines drew up to 1024 pixels beyond the visible area. The HUD converted the mouse position to a map cell by testing all 82,944 cells, several times per frame (~70 % of the frame time). Because the game logic runs once per frame, this slowed down the whole game, especially while dragging the camera. | Exact, constant-time replacement; sprites are only drawn in the visible area (identical image). Frame time on a big city dropped from ~18 ms to ~6 ms, while dragging the camera from ~36 ms to ~20 ms. |
 | Game speed | The original timer used the coarse 15.6 ms Windows timer: frames came every 17–35 ms, so the game speed varied all the time (cars slowed down while scrolling). | Precise frame limiter at the game's intended 30 frames per second (constant game speed). |
+| Injured officers | Officers injured on patrol or at a checkpoint lay on the street until they were back from hospital, and their team could still be sent to crimes. | Taken away after 10 seconds; teams with injured officers are not offered. |
+| Sound device | Speakers switched on after the start stayed silent (sound only on the device present at start). | Output follows the Windows default device. |
 | Selection square | Missing at the farthest zoom level and near the right/bottom part of the map when zoomed out. | Drawn at every zoom level, correct mouse-to-map conversion. |
 | Camera when zoomed out | Near the right and bottom edge of the city the view showed a black area; buildings and shadows were cut off at a straight line (camera limits ignored the zoom). | Zoom-aware camera limits. |
 | Tile seams | Thin lines between map tiles when zoomed (texture addressing left at WRAP). | CLAMP texture addressing. |
@@ -109,6 +111,7 @@ Requirements: Visual Studio 2019 or newer with the C++ x86 tools and the Windows
 | `src/p2patch/gameplay.c` | Hard mode, cheats, menu text |
 | `src/p2patch/errors.c` | Error logging |
 | `src/p2patch/robustness.c` | Safe handling of latent bugs of the original code, layer restore |
+| `src/p2patch/audio.c` | Sound output follows the default device |
 | `src/p2patch/userdata.c` | Save games in the user folder, `police2_niox.exe` (4 GB, no administrator rights) |
 | `src/p2patch/game.h` | Addresses and structure offsets of build 488 |
 | `tools/` | Analysis helpers (Delphi RTTI name recovery, Ghidra export, Frida probes) |
