@@ -66,6 +66,109 @@ static int __cdecl SpriteVisible(const uint8_t *spr)
     return 1;
 }
 
+/* ------------------------------------------------------------------------------------------ */
+/* Interpolation for frames drawn between two game frames (RenderFPS > GameFPS)              */
+/*                                                                                            */
+/* Moving sprites of the dynamic layer (cars, people) are drawn at the position between the   */
+/* last two game frames that matches the time of the frame - one game frame (33 ms) behind,   */
+/* but smooth. Their real position is restored right after drawing.                          */
+/* ------------------------------------------------------------------------------------------ */
+
+#define FORM_ENGINE_DYNAMIC 0x4A8
+#define INTERP_SLOTS        8192
+#define INTERP_MAX_STEP     200.0f      /* larger jumps are not interpolated (teleports) */
+
+typedef struct {
+    const uint8_t *spr;
+    unsigned tick;
+    float prevX, prevY, curX, curY, saveX, saveY;
+    int active;
+} InterpEntry;
+
+static InterpEntry g_interp[INTERP_SLOTS];
+static unsigned g_tick = 1;
+static BOOL     g_logicFrame, g_interpOn;
+static float    g_alpha;
+static const uint8_t *g_dynEngine;
+
+void Interp_SetFrame(BOOL logicTick, float alpha, void *form)
+{
+    g_interpOn = TRUE;
+    g_logicFrame = logicTick;
+    if (logicTick) g_tick++;
+    g_alpha = alpha;
+    g_dynEngine = form ? FIELD(form, FORM_ENGINE_DYNAMIC, const uint8_t *) : NULL;
+}
+
+static InterpEntry *InterpLookup(const uint8_t *spr)
+{
+    unsigned h = ((uintptr_t)spr >> 4) * 2654435761u;
+    for (int i = 0; i < 16; i++) {
+        InterpEntry *e = &g_interp[(h + i) & (INTERP_SLOTS - 1)];
+        if (e->spr == spr) return e;
+        if (!e->spr || e->tick + 2 < g_tick) {              /* free or stale slot */
+            e->spr = spr;
+            e->tick = 0;
+            e->active = 0;
+            return e;
+        }
+    }
+    return NULL;
+}
+
+static void __cdecl InterpBegin(uint8_t *spr)
+{
+    if (!g_interpOn || FIELD(spr, SPR_ENGINE, const uint8_t *) != g_dynEngine) return;
+    InterpEntry *e = InterpLookup(spr);
+    if (!e) return;
+    float x = FIELD(spr, SPR_X, float), y = FIELD(spr, SPR_Y, float);
+    if (g_logicFrame && e->tick == g_tick - 1) {            /* moved by this game frame */
+        e->prevX = e->curX; e->prevY = e->curY;
+        e->curX = x; e->curY = y;
+        e->tick = g_tick;
+    } else if (e->tick != g_tick || x != e->curX || y != e->curY) {
+        e->prevX = e->curX = x;                            /* new or moved otherwise */
+        e->prevY = e->curY = y;
+        e->tick = g_tick;
+    }
+    float dx = e->curX - e->prevX, dy = e->curY - e->prevY;
+    if (dx == 0.0f && dy == 0.0f) return;
+    if (fabsf(dx) > INTERP_MAX_STEP || fabsf(dy) > INTERP_MAX_STEP) return;
+    e->saveX = x;
+    e->saveY = y;
+    e->active = 1;
+    FIELD(spr, SPR_X, float) = e->prevX + dx * g_alpha;
+    FIELD(spr, SPR_Y, float) = e->prevY + dy * g_alpha;
+}
+
+static void __cdecl InterpEnd(uint8_t *spr)
+{
+    if (!g_interpOn || FIELD(spr, SPR_ENGINE, const uint8_t *) != g_dynEngine) return;
+    InterpEntry *e = InterpLookup(spr);
+    if (!e || !e->active) return;
+    FIELD(spr, SPR_X, float) = e->saveX;
+    FIELD(spr, SPR_Y, float) = e->saveY;
+    e->active = 0;
+}
+
+/* visible path of TSprite.Draw: DoDraw with the interpolated position */
+static __declspec(naked) void Thunk_DrawVisible(void)
+{
+    __asm {
+        push ebx
+        call InterpBegin
+        add  esp, 4
+        mov  eax, ebx
+        mov  edx, [eax]
+        call dword ptr [edx + 4]            /* DoDraw */
+        push ebx
+        call InterpEnd
+        add  esp, 4
+        push PATCH_CULL_DRAW + 7
+        ret
+    }
+}
+
 static __declspec(naked) void Thunk_Cull(void)
 {
     __asm {
@@ -74,8 +177,7 @@ static __declspec(naked) void Thunk_Cull(void)
         add  esp, 4
         test eax, eax
         jz   invisible
-        push PATCH_CULL_DRAW
-        ret
+        jmp  Thunk_DrawVisible
     invisible:
         push PATCH_CULL_SKIP
         ret

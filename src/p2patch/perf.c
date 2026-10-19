@@ -101,13 +101,24 @@ static __declspec(naked) void Thunk_ScreenToCell(void)
 #define PATCH_SET_TIMEREVENT     0x005F305F   /* GameInit: mov [eax+18h], offset TimerEvent    */
 #define PATCH_ASPHYRE_SLEEP_JAE  0x005920A9   /* TAsphyreTimer idle: jae (skip the sleep)       */
 
-static LARGE_INTEGER g_freq, g_next;
+static LARGE_INTEGER g_freq, g_next, g_logicNext;
+static int g_renderFps;                 /* 0 = one frame per game tick (original) */
+static volatile LONG g_skipLogic;       /* read by Thunk_LogicGate */
+static void *g_form;
 
-static void __cdecl WaitNextFrame(void)
+#define ADDR_HUD_BLINK      0x00A9E641  /* byte counter, +1/-1 per TimerEvent call */
+#define ADDR_HUD_BLINK_DIR  0x00A9E642
+
+/* Waits for the next frame and decides whether it is a game tick (logic + render) or a
+   render-only frame. Game ticks keep the original rate of gameFps per second. */
+static void __cdecl WaitNextFrame(void *form)
 {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    LONGLONG period = g_freq.QuadPart / g_cfg.gameFps;
+    g_form = form;
+    int fps = g_renderFps > g_cfg.gameFps ? g_renderFps : g_cfg.gameFps;
+    LONGLONG period = g_freq.QuadPart / fps;
+    LONGLONG logicPeriod = g_freq.QuadPart / g_cfg.gameFps;
     if (g_next.QuadPart == 0 || now.QuadPart - g_next.QuadPart > period * 4) {
         g_next.QuadPart = now.QuadPart;           /* first frame or far behind (loading) */
     } else {
@@ -121,7 +132,29 @@ static void __cdecl WaitNextFrame(void)
         }
     }
     g_next.QuadPart += period;
-    Gameplay_Tick();
+
+    if (g_renderFps <= g_cfg.gameFps) {
+        g_skipLogic = 0;
+        Gameplay_Tick();
+        return;
+    }
+    if (g_logicNext.QuadPart == 0 || now.QuadPart - g_logicNext.QuadPart > logicPeriod * 4)
+        g_logicNext.QuadPart = now.QuadPart;
+    BOOL logic = now.QuadPart >= g_logicNext.QuadPart;
+    if (logic) g_logicNext.QuadPart += logicPeriod;
+    /* time since the last game tick in game ticks (0..1) */
+    float alpha = 1.0f - (float)(g_logicNext.QuadPart - now.QuadPart) / (float)logicPeriod;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    g_skipLogic = !logic;
+    Interp_SetFrame(logic, alpha, form);
+    if (logic) {
+        Gameplay_Tick();
+    } else {
+        /* the HUD blink counter advances on every call: keep its speed */
+        uint8_t *c = (uint8_t *)ADDR_HUD_BLINK;
+        *c += *(uint8_t *)ADDR_HUD_BLINK_DIR ? 1 : -1;
+    }
 }
 
 /* TNotifyEvent: eax = Self (TMainForm), edx = Sender */
@@ -130,12 +163,44 @@ static __declspec(naked) void Thunk_TimerEvent(void)
     __asm {
         push eax
         push edx
+        push eax
         call WaitNextFrame
+        add  esp, 4
         pop  edx
         pop  eax
         mov  ecx, ADDR_TimerEvent
         jmp  ecx
     }
+}
+
+/* replaces "cmp byte ptr [eax+12h], 1 / jne skip" in TimerEvent: the game logic block runs
+   only when the game is running and this frame is a game tick */
+#define PATCH_LOGIC_GATE   0x005F478B
+#define LOGIC_BLOCK        0x005F4795
+#define LOGIC_SKIP         0x005F4CF4
+
+static __declspec(naked) void Thunk_LogicGate(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        cmp  byte ptr [eax + 0x12], 1
+        jne  skip
+        push LOGIC_BLOCK
+        ret
+    skip:
+        push LOGIC_SKIP
+        ret
+    }
+}
+
+static int MonitorRefreshRate(void)
+{
+    DEVMODEA dm = { 0 };
+    dm.dmSize = sizeof(dm);
+    if (EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1)
+        return (int)dm.dmDisplayFrequency;
+    return 60;
 }
 
 static void InstallFrameLimiter(void)
@@ -152,6 +217,15 @@ static void InstallFrameLimiter(void)
     static const uint8_t jmp[] = { 0xEB, 0x21 };      /* never use the imprecise Asphyre sleep */
     WriteMem(PATCH_ASPHYRE_SLEEP_JAE, jmp, sizeof(jmp));
     Log("Frame limiter: %d game frames per second", g_cfg.gameFps);
+
+    g_renderFps = g_cfg.renderFps < 0 ? MonitorRefreshRate() : g_cfg.renderFps;
+    if (g_renderFps > 360) g_renderFps = 360;
+    static const uint8_t gate[] = { 0x80, 0x78, 0x12, 0x01, 0x0F, 0x85, 0x5F, 0x05, 0x00, 0x00 };
+    if (g_renderFps > g_cfg.gameFps && CheckBytes(PATCH_LOGIC_GATE, gate, sizeof(gate)) &&
+        PatchJmp(PATCH_LOGIC_GATE, (void *)Thunk_LogicGate, sizeof(gate)))
+        Log("Render rate: %d frames per second (game logic: %d)", g_renderFps, g_cfg.gameFps);
+    else
+        g_renderFps = 0;
 }
 
 void Perf_Install(void)
