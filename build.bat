@@ -19,7 +19,7 @@ cl /nologo /O2 /W3 /MT /GS- /LD /EHsc /D_CRT_SECURE_NO_WARNINGS /I. ^
    "%ROOT%src\p2patch\main.c" "%ROOT%src\p2patch\patch.c" "%ROOT%src\p2patch\display.c" ^
    "%ROOT%src\p2patch\sprites.c" "%ROOT%src\p2patch\paths.c" "%ROOT%src\p2patch\vehicles.c" ^
    "%ROOT%src\p2patch\groups.c" "%ROOT%src\p2patch\errors.c" "%ROOT%src\p2patch\gameplay.c" "%ROOT%src\p2patch\perf.c" "%ROOT%src\p2patch\robustness.c" ^
-   "%ROOT%src\p2patch\userdata.c" ^
+   "%ROOT%src\p2patch\userdata.c" "%ROOT%src\p2patch\audio.c" ^
    /Fe:msimg32.dll /link /DEF:"%ROOT%src\p2patch\p2patch.def" /DYNAMICBASE:NO /SAFESEH:NO ^
    user32.lib gdi32.lib kernel32.lib d3d11.lib dxgi.lib winmm.lib delayimp.lib /DELAYLOAD:d3d11.dll || (popd & exit /b 1)
 del /q *.obj *.exp *.lib upscale_*.h 2>nul

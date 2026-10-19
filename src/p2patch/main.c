@@ -39,6 +39,7 @@ static void ApplyAll(void)
     }
     Log("Game code found, applying fixes");
     UserData_Install();
+    Audio_Install();
     Display_EarlyInit();
     Display_Install();
     Presenter_Install();
