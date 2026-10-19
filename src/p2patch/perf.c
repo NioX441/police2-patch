@@ -196,7 +196,7 @@ static __declspec(naked) void Thunk_LogicGate(void)
 }
 
 /* Animations that advance once per call (pulsing crime markers, siren lights, day/night
-   fade) would run faster with more frames: on render-only frames they are skipped. */
+   fade) would run faster with more frames: on render-only frames their counters stand still. */
 #define PATCH_CRIME_PULSE     0x005ED94F   /* TMainForm.ShowCrimes: marker brightness +-10   */
 #define CRIME_PULSE_NEXT      0x005ED954
 #define CRIME_PULSE_SKIP      0x005ED98F
@@ -247,13 +247,24 @@ static __declspec(naked) void Thunk_EffectCounters(void)
     }
 }
 
+/* The day/night function also draws the night tint over the whole screen every frame, so it
+   must run on every frame; only its fade counter may not advance on render-only frames. */
+#define ADDR_DAYNIGHT_FADE_VALUE 0x00A4C80A
+
 static __declspec(naked) void Thunk_DayNightFade(void)
 {
     __asm {
         cmp  g_skipLogic, 0
-        jne  skip
+        jne  renderOnly
         push ADDR_DayNightFade
-    skip:
+        ret
+    renderOnly:
+        movzx eax, byte ptr ds:[ADDR_DAYNIGHT_FADE_VALUE]
+        push eax
+        mov  eax, ADDR_DayNightFade
+        call eax
+        pop  eax
+        mov  byte ptr ds:[ADDR_DAYNIGHT_FADE_VALUE], al
         ret
     }
 }
