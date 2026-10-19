@@ -6,7 +6,7 @@
 #include <windows.h>
 #include <stdint.h>
 
-#define P2PATCH_VERSION "1.2.0"
+#define P2PATCH_VERSION "1.2.1"
 
 #ifdef __cplusplus
 extern "C" {

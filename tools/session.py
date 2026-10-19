@@ -15,6 +15,7 @@ for step in plan:
     elif step[0] == 'shot': subprocess.run(['powershell', '-NoProfile', '-File', os.path.join(here, 'shot.ps1'), str(pid), step[1]])
     elif step[0] == 'drag': subprocess.run(['powershell', '-NoProfile', '-File', os.path.join(here, 'drag2.ps1')] + [str(v) for v in step[1:]])
     elif step[0] == 'keys': subprocess.run(['powershell', '-NoProfile', '-Command', "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + step[1] + "')"])
+    elif step[0] == 'move': subprocess.run(['powershell', '-NoProfile', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(%d,%d)' % (step[1], step[2])])
     elif step[0] == 'rpc': sc.exports_sync.call(step[1]) if False else None
 t0 = time.time()
 while time.time() - t0 < secs: time.sleep(1)

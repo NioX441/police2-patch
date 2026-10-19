@@ -126,7 +126,9 @@ static const char *g_defaultIni =
     "; also means more cases at the same time.\r\n"
     "CrimeFrequency=4.0\r\n"
     "; 1 = cheat keys: Ctrl+Shift+M adds 1,000 to your budget,\r\n"
-    ";     Ctrl+Shift+L raises the public safety level by 10 percentage points.\r\n"
+    ";     Ctrl+Shift+L raises the public safety level by 10 percentage points,\r\n"
+    ";     Ctrl+Shift+1..8 starts a crime (1 robbery, 2 stabbing, 3 homicide, 4 burglary,\r\n"
+    ";     5 smuggling, 6 drug abuse, 7 terrorism, 8 riot), Ctrl+Shift+0 a random crime.\r\n"
     "Cheats=1\r\n";
 
 static double IniDouble(const char *ini, const char *sec, const char *key, double def)

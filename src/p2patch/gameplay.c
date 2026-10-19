@@ -13,6 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ADDR_GAME_STATE      0x00A9E6C8
+#define ADDR_GAME_TIME       (ADDR_GAME_STATE + 0x08)   /* TDateTime */
+#define ADDR_CRIME_SLOTS     (ADDR_GAME_STATE + 0x58)
+#define CRIME_SLOTS          19
+#define MAX_CRIMES_PER_DAY   (CRIME_SLOTS + 64)
+
+static uint16_t g_crimeQueue[MAX_CRIMES_PER_DAY];   /* minute of the day (h * 60 + m), sorted */
+static int      g_queueLen, g_queuePos;
+static int CompareU16(const void *a, const void *b) { return *(const uint16_t *)a - *(const uint16_t *)b; }
+
 #define PATCH_GENERATECRIME_END 0x00602D0C   /* TCaseList.GenerateCrime epilogue, eax = TCase */
 #define CASE_SKILLPOINT         0x3C
 
@@ -89,6 +99,76 @@ static void RaiseSafety(void)
     Log("Cheat: public safety level is now %d%%", *(uint8_t *)ADDR_SAFETY_LEVEL);
 }
 
+/* ---- Cheat: start a crime of a chosen type ---------------------------------------------- */
+/* A free crime slot is set to the next game minute; TCaseList.InitCrime then starts the crime */
+/* and the type it picked is replaced right before its "type 6 (car theft, unused) -> 2" check. */
+/* Types: 0 robbery, 1 stabbing, 2 homicide, 3 burglary, 4 smuggling, 5 drug abuse,           */
+/* 7 terrorism, 8 riot; -1 = random type chosen by the game.                                 */
+
+#define PATCH_CRIME_TYPE     0x0060227F   /* InitCrime: cmp bl, 6 / jne 00602286              */
+#define CRIME_TYPE_NOT6      0x00602286
+#define CRIME_TYPE_IS6       0x00602284
+
+static volatile int g_forcedCrime = -2;   /* -2 = none requested */
+
+static __declspec(naked) void Thunk_CrimeType(void)
+{
+    __asm {
+        mov  eax, g_forcedCrime
+        cmp  eax, -2
+        je   original
+        mov  g_forcedCrime, -2
+        cmp  eax, -1
+        je   original
+        mov  bl, al
+    original:
+        cmp  bl, 6
+        jne  not6
+        push CRIME_TYPE_IS6
+        ret
+    not6:
+        push CRIME_TYPE_NOT6
+        ret
+    }
+}
+
+static const char *const g_crimeNames[] = { "robbery", "stabbing", "homicide", "burglary",
+    "smuggling", "drug abuse", "car theft", "terrorism", "riot" };
+
+static void SpawnCrime(int type)
+{
+    double now = *(const double *)ADDR_GAME_TIME;
+    int t = (int)((now - floor(now)) * 1440.0 + 0.001) + 1;
+    if (t % 60 == 0) t++;                   /* minute 0 is never used by the game */
+    if (t >= 24 * 60) t = 1;                /* shortly after midnight */
+    uint8_t *slots = (uint8_t *)ADDR_CRIME_SLOTS;
+    int latest = -1, latestTime = -1;
+    for (int i = 0; i < CRIME_SLOTS; i++) {
+        int st = slots[2 * i] * 60 + slots[2 * i + 1];
+        if (st > latestTime) { latestTime = st; latest = i; }
+    }
+    /* all slots in use (hard mode): the latest planned crime waits in the queue instead */
+    if (latestTime > 0 && g_queueLen < MAX_CRIMES_PER_DAY) {
+        BOOL full = TRUE;
+        for (int i = 0; i < CRIME_SLOTS; i++) full &= slots[2 * i] || slots[2 * i + 1];
+        if (full) {
+            if (g_queuePos >= g_queueLen) g_queuePos = g_queueLen = 0;
+            g_crimeQueue[g_queueLen++] = (uint16_t)latestTime;
+            qsort(g_crimeQueue + g_queuePos, g_queueLen - g_queuePos, sizeof(g_crimeQueue[0]), CompareU16);
+            slots[2 * latest] = slots[2 * latest + 1] = 0;
+        }
+    }
+    for (int i = 0; i < CRIME_SLOTS; i++) {
+        if (slots[2 * i] || slots[2 * i + 1]) continue;
+        slots[2 * i] = (uint8_t)(t / 60);
+        slots[2 * i + 1] = (uint8_t)(t % 60);
+        g_forcedCrime = type;
+        Log("Cheat: %s at %02d:%02d", type < 0 ? "random crime" : g_crimeNames[type], t / 60, t % 60);
+        return;
+    }
+    Log("Cheat: no free crime slot");
+}
+
 /* Keyboard hook of the game thread: sees the keys regardless of which control has focus. */
 static LRESULT CALLBACK KeyboardProc(int code, WPARAM vk, LPARAM lp)
 {
@@ -96,6 +176,10 @@ static LRESULT CALLBACK KeyboardProc(int code, WPARAM vk, LPARAM lp)
         (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000)) {
         if (vk == 'M' && g_cfg.cheats) AddMoney();
         if (vk == 'L' && g_cfg.cheats) RaiseSafety();
+        if (g_cfg.cheats && vk >= '0' && vk <= '8') {
+            static const int types[] = { -1, 0, 1, 2, 3, 4, 5, 7, 8 };   /* key 0 = random */
+            SpawnCrime(types[vk - '0']);
+        }
         if (vk == VK_F11 && g_cfg.debugKeys) {   /* debug: toggle sprite culling (1 <-> 2) */
             g_cfg.fixSpriteCulling = g_cfg.fixSpriteCulling == 2 ? 1 : 2;
             Log("Debug: SpriteCulling=%d", g_cfg.fixSpriteCulling);
@@ -125,20 +209,12 @@ void Gameplay_Tick(void)
 /* others wait in a queue and are put into slots that became free (no save game format change). */
 
 #define ADDR_CrimeGenerator  0x00602064
-#define ADDR_GAME_STATE      0x00A9E6C8
-#define ADDR_GAME_TIME       (ADDR_GAME_STATE + 0x08)   /* TDateTime */
-#define ADDR_CRIME_SLOTS     (ADDR_GAME_STATE + 0x58)
-#define CRIME_SLOTS          19
-#define MAX_CRIMES_PER_DAY   (CRIME_SLOTS + 64)
 
 static uint32_t g_rand = 0x2545F491;
 static int RandInt(int n) { g_rand = g_rand * 1103515245u + 12345u; return (int)((g_rand >> 16) % (uint32_t)n); }
 
-static uint16_t g_crimeQueue[MAX_CRIMES_PER_DAY];   /* minute of the day (h * 60 + m), sorted */
-static int      g_queueLen, g_queuePos;
 static double   g_lastGameTime;
 
-static int CompareU16(const void *a, const void *b) { return *(const uint16_t *)a - *(const uint16_t *)b; }
 
 static void __cdecl AfterCrimeGenerator(const uint8_t *before)
 {
@@ -261,6 +337,9 @@ static void PatchBuildLabel(void)
 void Gameplay_Install(void)
 {
     PatchBuildLabel();
+    static const uint8_t cmp6[] = { 0x80, 0xFB, 0x06, 0x75, 0x02 };
+    if (g_cfg.cheats && CheckBytes(PATCH_CRIME_TYPE, cmp6, sizeof(cmp6)))
+        PatchJmp(PATCH_CRIME_TYPE, (void *)Thunk_CrimeType, sizeof(cmp6));
     if (!g_cfg.hardMode) return;
     static const uint8_t epilogue[] = { 0x8B, 0xC6, 0x5F, 0x5E, 0x5B, 0x8B, 0xE5, 0x5D, 0xC2, 0x1C, 0x00 };
     if (CheckBytes(PATCH_GENERATECRIME_END, epilogue, sizeof(epilogue)) &&
