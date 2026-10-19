@@ -2,6 +2,18 @@
 
 All notable changes of the Police 2 Community Patch.
 
+## [1.2.1] - 2026-10-19
+
+### Added
+- Cheat Ctrl+Shift+1 ... 8: start a crime of a chosen type at the next game minute
+  (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling, 6 drug abuse, 7 terrorism,
+  8 riot), Ctrl+Shift+0: random crime.
+
+### Fixed
+- The selection square was missing at the farthest zoom level (the game skipped it below
+  zoom 0.75) and near the right and bottom part of the map at the second zoom level (the
+  mouse-to-map conversion only worked for part of the map when zoomed out).
+
 ## [1.2.0] - 2026-10-19
 
 ### Added

@@ -49,6 +49,7 @@ fixes in memory while the game starts.
 | Traffic jams | Vehicles waiting for each other (typical at crossroads) never moved again and blocked police units. | Deadlock breaker: a vehicle blocked for a long time may pass. |
 | Performance | Moving the camera redraws all static layers, and the sprite engines drew up to 1024 pixels beyond the visible area. The HUD converted the mouse position to a map cell by testing all 82,944 cells, several times per frame (~70 % of the frame time). Because the game logic runs once per frame, this slowed down the whole game, especially while dragging the camera. | Exact, constant-time replacement; sprites are only drawn in the visible area (identical image). Frame time on a big city dropped from ~18 ms to ~6 ms, while dragging the camera from ~36 ms to ~20 ms. |
 | Game speed | The original timer used the coarse 15.6 ms Windows timer: frames came every 17–35 ms, so the game speed varied all the time (cars slowed down while scrolling). | Precise frame limiter at the game's intended 30 frames per second (constant game speed). |
+| Selection square | Missing at the farthest zoom level and near the right/bottom part of the map when zoomed out. | Drawn at every zoom level, correct mouse-to-map conversion. |
 | Camera when zoomed out | Near the right and bottom edge of the city the view showed a black area; buildings and shadows were cut off at a straight line (camera limits ignored the zoom). | Zoom-aware camera limits. |
 | Tile seams | Thin lines between map tiles when zoomed (texture addressing left at WRAP). | CLAMP texture addressing. |
 | Refuelling | Police cars refuelled twice in a row (fuel charged at :00, :29 and :58). | Evenly every 20 game minutes, same rate. |
@@ -65,7 +66,9 @@ fixes in memory while the game starts.
 * **Cheats** (`Cheats=0` disables them):
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> adds 1,000 to the budget,
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> raises the public safety level by
-  10 percentage points.
+  10 percentage points, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> ... <kbd>8</kbd> starts a
+  crime at the next game minute (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling,
+  6 drug abuse, 7 terrorism, 8 riot), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> a random one.
 * The main menu shows "build 488 - Niox Patch".
 
 ## Configuration
