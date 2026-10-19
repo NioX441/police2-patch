@@ -1,0 +1,17 @@
+# Build output
+/build/
+/release/
+
+# Game files and material derived from the game - never commit these
+/original/
+/testgame/
+/analysis/
+strings.txt
+*.exe
+*.asvf
+*.dat
+*.map
+*.log
+
+# Tool caches
+__pycache__/
