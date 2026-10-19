@@ -129,10 +129,13 @@ static const char *g_defaultIni =
     "; 4.0 = 40 instead of 10 crimes per day on the highest difficulty. More crimes per day\r\n"
     "; also means more cases at the same time.\r\n"
     "CrimeFrequency=4.0\r\n"
+    "; 1 = car theft crimes (prepared in the game but switched off by the developers).\r\n"
+    "CarTheft=1\r\n"
     "; 1 = cheat keys: Ctrl+Shift+M adds 1,000 to your budget,\r\n"
     ";     Ctrl+Shift+L raises the public safety level by 10 percentage points,\r\n"
     ";     Ctrl+Shift+1..8 starts a crime (1 robbery, 2 stabbing, 3 homicide, 4 burglary,\r\n"
-    ";     5 smuggling, 6 drug abuse, 7 terrorism, 8 riot), Ctrl+Shift+0 a random crime.\r\n"
+    ";     5 smuggling, 6 drug abuse, 7 terrorism, 8 riot, 9 car theft), Ctrl+Shift+0 a\r\n"
+    ";     random crime.\r\n"
     "Cheats=1\r\n";
 
 static double IniDouble(const char *ini, const char *sec, const char *key, double def)
@@ -192,6 +195,7 @@ void LoadConfig(void)
 
     g_cfg.hardMode         = GetPrivateProfileIntA("Gameplay", "HardMode", 0, ini);
     g_cfg.cheats           = GetPrivateProfileIntA("Gameplay", "Cheats", 1, ini);
+    g_cfg.carTheft         = GetPrivateProfileIntA("Gameplay", "CarTheft", 1, ini);
     g_cfg.userDataFolder   = GetPrivateProfileIntA("System", "UserDataFolder", 1, ini);
     g_cfg.largeMemory      = GetPrivateProfileIntA("System", "LargeMemory", 1, ini);
     g_cfg.gameFps          = GetPrivateProfileIntA("Performance", "GameFPS", 30, ini);

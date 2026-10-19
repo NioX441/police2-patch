@@ -110,6 +110,7 @@ static void RaiseSafety(void)
 #define CRIME_TYPE_IS6       0x00602284
 
 static volatile int g_forcedCrime = -2;   /* -2 = none requested */
+static int g_carTheft;                    /* car theft (type 6) enabled */
 
 static __declspec(naked) void Thunk_CrimeType(void)
 {
@@ -123,6 +124,8 @@ static __declspec(naked) void Thunk_CrimeType(void)
         mov  bl, al
     original:
         cmp  bl, 6
+        jne  not6
+        cmp  g_carTheft, 0
         jne  not6
         push CRIME_TYPE_IS6
         ret
@@ -169,6 +172,32 @@ static void SpawnCrime(int type)
     Log("Cheat: no free crime slot");
 }
 
+/* ---- Car theft ------------------------------------------------------------------------- */
+/* Crime type 6 (car theft) has a name, a dispatcher message and is handled like robbery,      */
+/* stabbing, homicide and burglary when patrols look for criminals - but InitCrime replaces it */
+/* with homicide, and ProcessCrime creates no criminal for it (and does not give him the       */
+/* criminal look). With these two checks extended it plays like the other street crimes.      */
+
+#define PATCH_CRIMINAL_CREATE  0x00603D31   /* sub al,6 / jb create / dec al / jne skip        */
+#define PATCH_CRIMINAL_LOOK    0x00604E7E   /* sub al,6 / jb look / sub al,2 / jne skip        */
+
+static void EnableCarTheft(void)
+{
+    static const uint8_t createOld[] = { 0x2C, 0x06, 0x72, 0x08, 0xFE, 0xC8, 0x0F, 0x85, 0xBC, 0x01, 0x00, 0x00 };
+    /* cmp al,7 / jbe 00603D3D / jmp 00603EF9 / nop x3 : types 0..7 get a criminal */
+    static const uint8_t createNew[] = { 0x3C, 0x07, 0x76, 0x08, 0xE9, 0xBF, 0x01, 0x00, 0x00, 0x90, 0x90, 0x90 };
+    static const uint8_t lookOld[] = { 0x2C, 0x06, 0x72, 0x08, 0x2C, 0x02, 0x0F, 0x85, 0xFD, 0x04, 0x00, 0x00 };
+    /* cmp al,6 / jbe 00604E8A / cmp al,8 / jne 00605387 : types 0..6 and 8 */
+    static const uint8_t lookNew[] = { 0x3C, 0x06, 0x76, 0x08, 0x3C, 0x08, 0x0F, 0x85, 0xFD, 0x04, 0x00, 0x00 };
+    if (!CheckBytes(PATCH_CRIMINAL_CREATE, createOld, sizeof(createOld)) ||
+        !CheckBytes(PATCH_CRIMINAL_LOOK, lookOld, sizeof(lookOld)))
+        return;
+    WriteMem(PATCH_CRIMINAL_CREATE, createNew, sizeof(createNew));
+    WriteMem(PATCH_CRIMINAL_LOOK, lookNew, sizeof(lookNew));
+    g_carTheft = 1;
+    Log("Car theft enabled");
+}
+
 /* Keyboard hook of the game thread: sees the keys regardless of which control has focus. */
 static LRESULT CALLBACK KeyboardProc(int code, WPARAM vk, LPARAM lp)
 {
@@ -176,8 +205,8 @@ static LRESULT CALLBACK KeyboardProc(int code, WPARAM vk, LPARAM lp)
         (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000)) {
         if (vk == 'M' && g_cfg.cheats) AddMoney();
         if (vk == 'L' && g_cfg.cheats) RaiseSafety();
-        if (g_cfg.cheats && vk >= '0' && vk <= '8') {
-            static const int types[] = { -1, 0, 1, 2, 3, 4, 5, 7, 8 };   /* key 0 = random */
+        if (g_cfg.cheats && vk >= '0' && vk <= '9' && (vk != '9' || g_carTheft)) {
+            static const int types[] = { -1, 0, 1, 2, 3, 4, 5, 7, 8, 6 };   /* key 0 = random */
             SpawnCrime(types[vk - '0']);
         }
         if (vk == VK_F11 && g_cfg.debugKeys) {   /* debug: toggle sprite culling (1 <-> 2) */
@@ -337,8 +366,9 @@ static void PatchBuildLabel(void)
 void Gameplay_Install(void)
 {
     PatchBuildLabel();
+    if (g_cfg.carTheft) EnableCarTheft();
     static const uint8_t cmp6[] = { 0x80, 0xFB, 0x06, 0x75, 0x02 };
-    if (g_cfg.cheats && CheckBytes(PATCH_CRIME_TYPE, cmp6, sizeof(cmp6)))
+    if ((g_cfg.cheats || g_carTheft) && CheckBytes(PATCH_CRIME_TYPE, cmp6, sizeof(cmp6)))
         PatchJmp(PATCH_CRIME_TYPE, (void *)Thunk_CrimeType, sizeof(cmp6));
     if (!g_cfg.hardMode) return;
     static const uint8_t epilogue[] = { 0x8B, 0xC6, 0x5F, 0x5E, 0x5B, 0x8B, 0xE5, 0x5D, 0xC2, 0x1C, 0x00 };

@@ -32,6 +32,7 @@ typedef struct Config {
     int  debugKeys;             /* [Debug] Keys: developer hotkeys */
     /* [Gameplay] */
     int  hardMode;
+    int  carTheft;              /* enable crime type 6 (car theft) */
     int  cheats;                /* Ctrl+Shift+M money, Ctrl+Shift+L safety */
     int  gameFps;               /* 0 = original timer */
     int  renderFps;             /* -1 = monitor refresh rate, 0 = same as gameFps */

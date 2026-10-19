@@ -66,9 +66,11 @@ fixes in memory while the game starts.
 * **Cheats** (`Cheats=0` disables them):
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> adds 1,000 to the budget,
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> raises the public safety level by
-  10 percentage points, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> ... <kbd>8</kbd> starts a
+  10 percentage points, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> ... <kbd>9</kbd> starts a
   crime at the next game minute (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling,
-  6 drug abuse, 7 terrorism, 8 riot), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> a random one.
+  6 drug abuse, 7 terrorism, 8 riot, 9 car theft), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd>
+  a random one.
+* **Car theft** (`CarTheft=1`): a crime type the developers prepared but switched off.
 * The main menu shows "build 488 - Niox Patch".
 
 ## Configuration

@@ -5,9 +5,12 @@ All notable changes of the Police 2 Community Patch.
 ## [1.2.1] - 2026-10-19
 
 ### Added
-- Cheat Ctrl+Shift+1 ... 8: start a crime of a chosen type at the next game minute
+- Car theft: the crime type was prepared in the game (name, dispatcher message, patrol
+  detection) but switched off - the game replaced it with homicide and created no criminal
+  for it. It now occurs like the other street crimes (`CarTheft`, default on).
+- Cheat Ctrl+Shift+1 ... 9: start a crime of a chosen type at the next game minute
   (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling, 6 drug abuse, 7 terrorism,
-  8 riot), Ctrl+Shift+0: random crime.
+  8 riot, 9 car theft), Ctrl+Shift+0: random crime.
 
 ### Fixed
 - The selection square was missing at the farthest zoom level (the game skipped it below
