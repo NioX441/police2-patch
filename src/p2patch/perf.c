@@ -9,7 +9,10 @@
  *    roundings per cell) and is called several times per frame from the HUD (once for each
  *    station, camera and speed camera) - about 70 % of the frame time on a large city.
  *    The replacement inverts the isometric projection and only tests the 9 x 9 cells around
- *    the result, using exactly the same distance metric, threshold and tie-breaking order.
+ *    the result (same distance metric, threshold and tie-breaking order at zoom 1). When
+ *    zoomed out, the original searched in zoom-scaled cell indices that could not reach the
+ *    right and bottom part of the map (no selection square there); the replacement works
+ *    in map coordinates at every zoom level.
  *
  * 2) Frame pacing: the Asphyre timer uses Sleep() with the default 15.6 ms system timer
  *    resolution, which produces frame intervals between 17 and 35 ms. A 1 ms timer resolution
@@ -27,6 +30,7 @@
 #define ADDR_MAP_OFFSET_Y   0x00A9E6A0
 #define ADDR_HOVER_X        0x00A9E6C0
 #define ADDR_HOVER_Y        0x00A9E6C4
+#define PATCH_HUD_ZOOM_CHECK 0x005F9C10   /* RenderTOHud: jb (zoom < 0.75: no selection square) */
 
 static __inline int RoundD(double v) { return (int)lrint(v); }   /* banker's rounding like Delphi */
 
@@ -35,8 +39,9 @@ static int __cdecl ScreenToCell(int mx, int my, int *cellX, int setHover, int *c
     uint8_t *form = **(uint8_t ***)ADDR_MAINFORM_PTR;
     uint8_t *eng = FIELD(form, MAINFORM_ENGINE1, uint8_t *);
     double z = FIELD(eng, ENG_ZOOM, float);
-    int best = RoundD(z * 60.0f);
-    float a = (float)(32.0f * z), b = (float)(16.0f * z);
+    if (!(z > 0.01)) z = 1.0;
+    int best = 60;
+    /* world position under the mouse */
     double tx = mx / z + *(int *)ADDR_MAP_OFFSET_X;
     double ty = my / z + *(int *)ADDR_MAP_OFFSET_Y;
     int found = 0;
@@ -46,8 +51,8 @@ static int __cdecl ScreenToCell(int mx, int my, int *cellX, int setHover, int *c
         *(int *)ADDR_HOVER_Y = -1;
     }
 
-    /* continuous inverse of  px = a*(x - y + 1),  py = b*(x + y + 1) */
-    double u = a != 0 ? tx / a : 0, v = b != 0 ? ty / b : 0;
+    /* continuous inverse of  px = 32*(x - y + 1),  py = 16*(x + y + 1) */
+    double u = tx / 32.0, v = ty / 16.0;
     int cx = (int)floor((u + v) * 0.5 - 1.0 + 0.5);
     int cy = (int)floor((v - u) * 0.5 + 0.5);
     int x0 = max(0, cx - 4), x1 = min(MAP_SIZE - 1, cx + 4);
@@ -55,10 +60,9 @@ static int __cdecl ScreenToCell(int mx, int my, int *cellX, int setHover, int *c
 
     for (int x = x0; x <= x1; x++) {
         for (int y = y0; y <= y1; y++) {
-            int px = RoundD((double)(x * a) - (double)(y * a) + a);
-            int py = RoundD((double)(y * b) + (double)(x * b) + b);
-            double dx = (px - mx / z) - *(int *)ADDR_MAP_OFFSET_X;
-            double dy = (py - my / z) - *(int *)ADDR_MAP_OFFSET_Y;
+            int px = 32 * (x - y + 1);
+            int py = 16 * (x + y + 1);
+            double dx = px - tx, dy = py - ty;
             int d = RoundD(sqrt(dx * dx + dy * dy));
             if (d < best) {
                 best = d;
@@ -72,9 +76,6 @@ static int __cdecl ScreenToCell(int mx, int my, int *cellX, int setHover, int *c
             }
         }
     }
-    /* the original scales the result with the zoom factor at the end */
-    *cellX = RoundD(*cellX * z);
-    *cellY = RoundD(*cellY * z);
     return found;
 }
 
@@ -194,6 +195,81 @@ static __declspec(naked) void Thunk_LogicGate(void)
     }
 }
 
+/* Animations that advance once per call (pulsing crime markers, siren lights, day/night
+   fade) would run faster with more frames: on render-only frames they are skipped. */
+#define PATCH_CRIME_PULSE     0x005ED94F   /* TMainForm.ShowCrimes: marker brightness +-10   */
+#define CRIME_PULSE_NEXT      0x005ED954
+#define CRIME_PULSE_SKIP      0x005ED98F
+#define PATCH_SIREN_ANIM      0x005A478F   /* siren light pattern counters                  */
+#define SIREN_ANIM_NEXT       0x005A4794
+#define SIREN_ANIM_SKIP       0x005A47B0
+#define CALL_EFFECT_COUNTERS  0x005F5D4C   /* RenderTOBGLayer_Effect: call 005A3974         */
+#define ADDR_EffectCounters   0x005A3974
+#define CALL_DAYNIGHT_FADE    0x005F5432   /* RenderEvent: call 005E3BB4                    */
+#define ADDR_DayNightFade     0x005E3BB4
+
+static __declspec(naked) void Thunk_CrimePulse(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        mov  eax, dword ptr ds:[0x00626C90]
+        push CRIME_PULSE_NEXT
+        ret
+    skip:
+        push CRIME_PULSE_SKIP
+        ret
+    }
+}
+
+static __declspec(naked) void Thunk_SirenAnim(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        mov  eax, dword ptr ds:[0x00626F5C]
+        push SIREN_ANIM_NEXT
+        ret
+    skip:
+        push SIREN_ANIM_SKIP
+        ret
+    }
+}
+
+static __declspec(naked) void Thunk_EffectCounters(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        push ADDR_EffectCounters
+    skip:
+        ret
+    }
+}
+
+static __declspec(naked) void Thunk_DayNightFade(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        push ADDR_DayNightFade
+    skip:
+        ret
+    }
+}
+
+static void InstallAnimationRate(void)
+{
+    static const uint8_t pulse[] = { 0xA1, 0x90, 0x6C, 0x62, 0x00 };
+    static const uint8_t siren[] = { 0xA1, 0x5C, 0x6F, 0x62, 0x00 };
+    if (CheckBytes(PATCH_CRIME_PULSE, pulse, sizeof(pulse)))
+        PatchJmp(PATCH_CRIME_PULSE, (void *)Thunk_CrimePulse, 5);
+    if (CheckBytes(PATCH_SIREN_ANIM, siren, sizeof(siren)))
+        PatchJmp(PATCH_SIREN_ANIM, (void *)Thunk_SirenAnim, 5);
+    RedirectCall(CALL_EFFECT_COUNTERS, ADDR_EffectCounters, (void *)Thunk_EffectCounters);
+    RedirectCall(CALL_DAYNIGHT_FADE, ADDR_DayNightFade, (void *)Thunk_DayNightFade);
+}
+
 static int MonitorRefreshRate(void)
 {
     DEVMODEA dm = { 0 };
@@ -223,8 +299,10 @@ static void InstallFrameLimiter(void)
     static const uint8_t gate[] = { 0x80, 0x78, 0x12, 0x01, 0x0F, 0x85, 0x5F, 0x05, 0x00, 0x00 };
     if (g_renderFps > g_cfg.gameFps && CheckBytes(PATCH_LOGIC_GATE, gate, sizeof(gate)) &&
         PatchJmp(PATCH_LOGIC_GATE, (void *)Thunk_LogicGate, sizeof(gate)))
+    {
+        InstallAnimationRate();
         Log("Render rate: %d frames per second (game logic: %d)", g_renderFps, g_cfg.gameFps);
-    else
+    } else
         g_renderFps = 0;
 }
 
@@ -234,8 +312,15 @@ void Perf_Install(void)
     InstallFrameLimiter();
     static const uint8_t prologue[] = { 0x55, 0x8B, 0xEC, 0x83, 0xC4, 0xCC, 0x53, 0x56, 0x57 };
     if (CheckBytes(ADDR_ScreenToCell, prologue, sizeof(prologue)) &&
-        PatchJmp(ADDR_ScreenToCell, (void *)Thunk_ScreenToCell, 5))
+        PatchJmp(ADDR_ScreenToCell, (void *)Thunk_ScreenToCell, 5)) {
         Log("Performance fixes installed");
+        /* The HUD skipped the selection square below zoom 0.75 (the original lookup did not
+           work there); with the new lookup it is drawn at every zoom level. */
+        static const uint8_t jb[] = { 0x0F, 0x82, 0x30, 0x16, 0x00, 0x00 };
+        static const uint8_t nop6[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+        if (CheckBytes(PATCH_HUD_ZOOM_CHECK, jb, sizeof(jb)))
+            WriteMem(PATCH_HUD_ZOOM_CHECK, nop6, sizeof(nop6));
+    }
 }
 
 /* ---------------------------------------------------------------------------------------- */
