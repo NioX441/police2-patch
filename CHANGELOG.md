@@ -11,6 +11,12 @@ All notable changes of the Police 2 Community Patch.
   smooth). Camera movement is smooth at the full frame rate. Blinking markers, siren lights
   and the day/night fade keep their original speed.
 
+### Fixed
+- Police cars sometimes slid across buildings until they reached a road: when no route to the
+  destination existed (destination not on a road), the patch let them drive in a straight
+  line. They now drive to the nearest reachable road cell at the destination, or stop where
+  they are if there is none.
+
 ## [1.2.1] - 2026-10-19
 
 ### Added

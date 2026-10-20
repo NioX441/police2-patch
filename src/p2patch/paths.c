@@ -22,7 +22,7 @@
  *        restored after each search.
  *      - When no route is found, an empty route is returned. The car then stands still and
  *        repeats the (expensive) search every frame. We retry with the other start
- *        directions and finally fall back to a direct route.
+ *        directions and finally drive to the nearest reachable road cell at the destination.
  */
 #include "patch.h"
 #include "game.h"
@@ -226,6 +226,9 @@ static __declspec(naked) void Thunk_WalkerPathEnd(void)
 /* 3) Police car route search                                                                  */
 /* ---------------------------------------------------------------------------------------- */
 
+#define CAR_DEST_RADIUS 10      /* cells around an unreachable destination */
+#define CAR_DEST_TRIES  16      /* route searches at most */
+
 static uint8_t g_inout[N_CELLS];
 
 static void SaveInOut(void)
@@ -276,13 +279,39 @@ static void *__cdecl CarAStar(int startX, int startY, int destX, int *len, int d
         }
     }
 
-    /* no route at all: drive directly (prevents a car frozen forever) */
+    /* No route: the destination is usually not on a road (e.g. a crime on a sidewalk or in a
+       courtyard). Route to the nearest cell of the same kind as the car's start cell instead.
+       (The patch used to fall back to a straight line here, which let cars slide over
+       buildings.) */
     if (list) DelphiFree(list);
+    uint8_t roadType = Cell(startX, startY)[CELL_TYPE];
+    int tries = 0;
+    for (int r = 1; r <= CAR_DEST_RADIUS && tries < CAR_DEST_TRIES; r++) {
+        for (int dx = -r; dx <= r && tries < CAR_DEST_TRIES; dx++) {
+            for (int dy = -r; dy <= r && tries < CAR_DEST_TRIES; dy++) {
+                if (max(abs(dx), abs(dy)) != r) continue;           /* ring of radius r */
+                int x = destX + dx, y = destY + dy;
+                if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) continue;
+                if (Cell(x, y)[CELL_TYPE] != roadType) continue;
+                tries++;
+                list = CallCarAStar(startX, startY, x, len, dir, y);
+                RestoreInOut();
+                if (list && ListCount(list) >= 2) {
+                    Log("Car route %d,%d -> %d,%d not found, driving to %d,%d instead",
+                        startX, startY, destX, destY, x, y);
+                    return list;
+                }
+                if (list) DelphiFree(list);
+            }
+        }
+    }
+
+    /* nothing reachable: stay here (the officers walk the rest) instead of freezing forever */
     list = DelphiCreate(VMT_TWayPointList);
     NewWayPoint(list, startX, startY);
-    NewWayPoint(list, destX, destY);
+    NewWayPoint(list, startX, startY);
     if (len) *len = 0;
-    Log("Car route %d,%d -> %d,%d not found, using direct route", startX, startY, destX, destY);
+    Log("Car route %d,%d -> %d,%d not found, car stops here", startX, startY, destX, destY);
     return list;
 }
 
