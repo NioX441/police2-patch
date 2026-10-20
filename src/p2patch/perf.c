@@ -31,6 +31,7 @@
 #define ADDR_HOVER_X        0x00A9E6C0
 #define ADDR_HOVER_Y        0x00A9E6C4
 #define PATCH_HUD_ZOOM_CHECK 0x005F9C10   /* RenderTOHud: jb (zoom < 0.75: no selection square) */
+#define PATCH_CLICK_ZOOM_CHECK 0x005F16BD /* FormMouseDown: jb (zoom < 0.75: map clicks ignored) */
 
 static __inline int RoundD(double v) { return (int)lrint(v); }   /* banker's rounding like Delphi */
 
@@ -331,6 +332,10 @@ void Perf_Install(void)
         static const uint8_t nop6[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         if (CheckBytes(PATCH_HUD_ZOOM_CHECK, jb, sizeof(jb)))
             WriteMem(PATCH_HUD_ZOOM_CHECK, nop6, sizeof(nop6));
+        /* Same for clicks on the map (patrol routes, checkpoints, selecting units). */
+        static const uint8_t jbClick[] = { 0x0F, 0x82, 0xE9, 0x16, 0x00, 0x00 };
+        if (CheckBytes(PATCH_CLICK_ZOOM_CHECK, jbClick, sizeof(jbClick)))
+            WriteMem(PATCH_CLICK_ZOOM_CHECK, nop6, sizeof(nop6));
     }
 }
 

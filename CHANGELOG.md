@@ -10,9 +10,16 @@ All notable changes of the Police 2 Community Patch.
   for it. It now occurs like the other street crimes (`CarTheft`, default on).
 - Cheat Ctrl+Shift+1 ... 9: start a crime of a chosen type at the next game minute
   (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling, 6 drug abuse, 7 terrorism,
-  8 riot, 9 car theft), Ctrl+Shift+0: random crime.
+  8 riot, 9 car theft), Ctrl+Shift+R (or 0): random crime.
 
 ### Fixed
+- Clicks on the map (patrol routes, checkpoints) were ignored at the farthest zoom levels.
+- All police cars refuelled at the same moment; each car now has its own fixed time.
+- New crimes could start exactly where another case was still running.
+- The crime window of an unreported riot showed "GUI CRIME" instead of its title (the game
+  looked up the text with a wrong key).
+- Two music tracks could play at the same time: when the music changed while a faded-out
+  track was still active, the playing track was not faded out.
 - Officers injured on patrol or at a checkpoint lay on the street (with the duty icon) until
   they were back from hospital; they are now taken away after 10 seconds.
 - Teams with an officer in hospital were offered when sending units to a crime.

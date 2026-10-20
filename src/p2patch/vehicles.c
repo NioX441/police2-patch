@@ -65,25 +65,38 @@ void Vehicles_Install(void)
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Police cars refuel twice in a row                                                           */
+/* Police cars refuel twice in a row / all at the same moment                                  */
 /*                                                                                             */
 /* TPolicecar.DoMove charges fuel (40 per stop, fuel icon) when "MinuteOf(game time) mod 29 =  */
-/* 0", i.e. at :00, :29 and :58 - so :58 and the next :00 are only two minutes apart. The      */
-/* replacement keeps the rate (three times per hour) but spaces it evenly every 20 minutes.    */
+/* 0", i.e. at :00, :29 and :58 - so :58 and the next :00 are only two minutes apart, and all  */
+/* cars refuel at the same moment. The replacement keeps the rate (three times per hour) but  */
+/* spaces it evenly every 20 minutes, with a fixed offset per car.                             */
 /* ------------------------------------------------------------------------------------------ */
 
-#define CALL_FUEL_MINUTE   0x005A5AE0   /* call MinuteOf(TDateTime) in TPolicecar.DoMove */
+#define CALL_FUEL_MINUTE   0x005A5AE0   /* call MinuteOf(TDateTime) in TPolicecar.DoMove (esi = car) */
 #define ADDR_MinuteOf      0x0045BFD8
 
-/* function MinuteOf(const AValue: TDateTime): Word; - the date is passed on the stack */
-static int __stdcall FuelMinute(double gameTime)
+static int __stdcall FuelMinute(const uint8_t *car, double gameTime)
 {
     long long minutes = (long long)(gameTime * 1440.0 + 0.5);
-    return minutes % 20 == 0 ? 0 : 1;   /* the caller tests "result mod 29 = 0" */
+    unsigned offset = (((uintptr_t)car >> 4) * 2654435761u >> 16) % 20;
+    return (minutes + offset) % 20 == 0 ? 0 : 1;   /* the caller tests "result mod 29 = 0" */
+}
+
+/* function MinuteOf(const AValue: TDateTime): Word - the date is passed on the stack */
+static __declspec(naked) void Thunk_FuelMinute(void)
+{
+    __asm {
+        push dword ptr [esp + 8]
+        push dword ptr [esp + 8]
+        push esi
+        call FuelMinute
+        ret  8
+    }
 }
 
 void Fuel_Install(void)
 {
-    if (RedirectCall(CALL_FUEL_MINUTE, ADDR_MinuteOf, (void *)FuelMinute))
+    if (RedirectCall(CALL_FUEL_MINUTE, ADDR_MinuteOf, (void *)Thunk_FuelMinute))
         Log("Refuel timing fix installed");
 }

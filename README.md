@@ -51,10 +51,12 @@ fixes in memory while the game starts.
 | Game speed | The original timer used the coarse 15.6 ms Windows timer: frames came every 17–35 ms, so the game speed varied all the time (cars slowed down while scrolling). | Precise frame limiter at the game's intended 30 frames per second (constant game speed). |
 | Injured officers | Officers injured on patrol or at a checkpoint lay on the street until they were back from hospital, and their team could still be sent to crimes. | Taken away after 10 seconds; teams with injured officers are not offered. |
 | Sound device | Speakers switched on after the start stayed silent (sound only on the device present at start). | Output follows the Windows default device. |
-| Selection square | Missing at the farthest zoom level and near the right/bottom part of the map when zoomed out. | Drawn at every zoom level, correct mouse-to-map conversion. |
+| Selection square | Missing at the farthest zoom level and near the right/bottom part of the map when zoomed out; map clicks were ignored there. | Drawn and clickable at every zoom level, correct mouse-to-map conversion. |
+| Crime locations | New crimes could start exactly where another case was still running. | The location search is repeated while it lands next to a running case. |
+| Music | Two music tracks could play at the same time. | The old track is always faded out. |
 | Camera when zoomed out | Near the right and bottom edge of the city the view showed a black area; buildings and shadows were cut off at a straight line (camera limits ignored the zoom). | Zoom-aware camera limits. |
 | Tile seams | Thin lines between map tiles when zoomed (texture addressing left at WRAP). | CLAMP texture addressing. |
-| Refuelling | Police cars refuelled twice in a row (fuel charged at :00, :29 and :58). | Evenly every 20 game minutes, same rate. |
+| Refuelling | Police cars refuelled twice in a row (fuel charged at :00, :29 and :58), all at the same moment. | Evenly every 20 game minutes, same rate, each car at its own time. |
 | Special units | SWAT, riot police and undercover officers looked like patrol officers for a moment after leaving a vehicle. | Correct appearance from the start. |
 | Errors | The global error handler of the game was empty – errors were silently ignored. Two latent bugs (undefined positions for invalid map cells, team buttons acting on a dissolved team) could misplace markers or affect the wrong team. | Errors are written to `p2patch.log`; the latent bugs are handled safely and logged. |
 
@@ -70,7 +72,7 @@ fixes in memory while the game starts.
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> raises the public safety level by
   10 percentage points, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> ... <kbd>9</kbd> starts a
   crime at the next game minute (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling,
-  6 drug abuse, 7 terrorism, 8 riot, 9 car theft), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd>
+  6 drug abuse, 7 terrorism, 8 riot, 9 car theft), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>
   a random one.
 * **Car theft** (`CarTheft=1`): a crime type the developers prepared but switched off.
 * The main menu shows "build 488 - Niox Patch".
