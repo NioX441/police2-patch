@@ -35,6 +35,7 @@ typedef struct Config {
     int  carTheft;              /* enable crime type 6 (car theft) */
     int  cheats;                /* Ctrl+Shift+M money, Ctrl+Shift+L safety */
     int  gameFps;               /* 0 = original timer */
+    int  renderFps;             /* -1 = monitor refresh rate, 0 = same as gameFps */
     int  userDataFolder;        /* saves in %LOCALAPPDATA% */
     int  largeMemory;           /* start police2_niox.exe (4 GB, no admin) */
     double criminalStrength;
@@ -90,7 +91,8 @@ void UserData_Install(void);
 void Audio_Install(void);
 BOOL UserData_Relaunch(void);       /* TRUE: police2_niox.exe was started instead */
 const wchar_t *UserData_Dir(void);  /* %LOCALAPPDATA%\Police 2 Community Patch\ or "" */
-void Gameplay_Tick(void);   /* called once per game frame */
+void Gameplay_Tick(void);
+void Interp_SetFrame(BOOL logicTick, float alpha, void *form);  /* sprites.c */   /* called once per game frame */
 
 #ifdef __cplusplus
 }

@@ -103,13 +103,24 @@ static __declspec(naked) void Thunk_ScreenToCell(void)
 #define PATCH_SET_TIMEREVENT     0x005F305F   /* GameInit: mov [eax+18h], offset TimerEvent    */
 #define PATCH_ASPHYRE_SLEEP_JAE  0x005920A9   /* TAsphyreTimer idle: jae (skip the sleep)       */
 
-static LARGE_INTEGER g_freq, g_next;
+static LARGE_INTEGER g_freq, g_next, g_logicNext;
+static int g_renderFps;                 /* 0 = one frame per game tick (original) */
+static volatile LONG g_skipLogic;       /* read by Thunk_LogicGate */
+static void *g_form;
 
-static void __cdecl WaitNextFrame(void)
+#define ADDR_HUD_BLINK      0x00A9E641  /* byte counter, +1/-1 per TimerEvent call */
+#define ADDR_HUD_BLINK_DIR  0x00A9E642
+
+/* Waits for the next frame and decides whether it is a game tick (logic + render) or a
+   render-only frame. Game ticks keep the original rate of gameFps per second. */
+static void __cdecl WaitNextFrame(void *form)
 {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    LONGLONG period = g_freq.QuadPart / g_cfg.gameFps;
+    g_form = form;
+    int fps = g_renderFps > g_cfg.gameFps ? g_renderFps : g_cfg.gameFps;
+    LONGLONG period = g_freq.QuadPart / fps;
+    LONGLONG logicPeriod = g_freq.QuadPart / g_cfg.gameFps;
     if (g_next.QuadPart == 0 || now.QuadPart - g_next.QuadPart > period * 4) {
         g_next.QuadPart = now.QuadPart;           /* first frame or far behind (loading) */
     } else {
@@ -123,7 +134,29 @@ static void __cdecl WaitNextFrame(void)
         }
     }
     g_next.QuadPart += period;
-    Gameplay_Tick();
+
+    if (g_renderFps <= g_cfg.gameFps) {
+        g_skipLogic = 0;
+        Gameplay_Tick();
+        return;
+    }
+    if (g_logicNext.QuadPart == 0 || now.QuadPart - g_logicNext.QuadPart > logicPeriod * 4)
+        g_logicNext.QuadPart = now.QuadPart;
+    BOOL logic = now.QuadPart >= g_logicNext.QuadPart;
+    if (logic) g_logicNext.QuadPart += logicPeriod;
+    /* time since the last game tick in game ticks (0..1) */
+    float alpha = 1.0f - (float)(g_logicNext.QuadPart - now.QuadPart) / (float)logicPeriod;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    g_skipLogic = !logic;
+    Interp_SetFrame(logic, alpha, form);
+    if (logic) {
+        Gameplay_Tick();
+    } else {
+        /* the HUD blink counter advances on every call: keep its speed */
+        uint8_t *c = (uint8_t *)ADDR_HUD_BLINK;
+        *c += *(uint8_t *)ADDR_HUD_BLINK_DIR ? 1 : -1;
+    }
 }
 
 /* TNotifyEvent: eax = Self (TMainForm), edx = Sender */
@@ -132,12 +165,130 @@ static __declspec(naked) void Thunk_TimerEvent(void)
     __asm {
         push eax
         push edx
+        push eax
         call WaitNextFrame
+        add  esp, 4
         pop  edx
         pop  eax
         mov  ecx, ADDR_TimerEvent
         jmp  ecx
     }
+}
+
+/* replaces "cmp byte ptr [eax+12h], 1 / jne skip" in TimerEvent: the game logic block runs
+   only when the game is running and this frame is a game tick */
+#define PATCH_LOGIC_GATE   0x005F478B
+#define LOGIC_BLOCK        0x005F4795
+#define LOGIC_SKIP         0x005F4CF4
+
+static __declspec(naked) void Thunk_LogicGate(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        cmp  byte ptr [eax + 0x12], 1
+        jne  skip
+        push LOGIC_BLOCK
+        ret
+    skip:
+        push LOGIC_SKIP
+        ret
+    }
+}
+
+/* Animations that advance once per call (pulsing crime markers, siren lights, day/night
+   fade) would run faster with more frames: on render-only frames their counters stand still. */
+#define PATCH_CRIME_PULSE     0x005ED94F   /* TMainForm.ShowCrimes: marker brightness +-10   */
+#define CRIME_PULSE_NEXT      0x005ED954
+#define CRIME_PULSE_SKIP      0x005ED98F
+#define PATCH_SIREN_ANIM      0x005A478F   /* siren light pattern counters                  */
+#define SIREN_ANIM_NEXT       0x005A4794
+#define SIREN_ANIM_SKIP       0x005A47B0
+#define CALL_EFFECT_COUNTERS  0x005F5D4C   /* RenderTOBGLayer_Effect: call 005A3974         */
+#define ADDR_EffectCounters   0x005A3974
+#define CALL_DAYNIGHT_FADE    0x005F5432   /* RenderEvent: call 005E3BB4                    */
+#define ADDR_DayNightFade     0x005E3BB4
+
+static __declspec(naked) void Thunk_CrimePulse(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        mov  eax, dword ptr ds:[0x00626C90]
+        push CRIME_PULSE_NEXT
+        ret
+    skip:
+        push CRIME_PULSE_SKIP
+        ret
+    }
+}
+
+static __declspec(naked) void Thunk_SirenAnim(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        mov  eax, dword ptr ds:[0x00626F5C]
+        push SIREN_ANIM_NEXT
+        ret
+    skip:
+        push SIREN_ANIM_SKIP
+        ret
+    }
+}
+
+static __declspec(naked) void Thunk_EffectCounters(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        push ADDR_EffectCounters
+    skip:
+        ret
+    }
+}
+
+/* The day/night function also draws the night tint over the whole screen every frame, so it
+   must run on every frame; only its fade counter may not advance on render-only frames. */
+#define ADDR_DAYNIGHT_FADE_VALUE 0x00A4C80A
+
+static __declspec(naked) void Thunk_DayNightFade(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  renderOnly
+        push ADDR_DayNightFade
+        ret
+    renderOnly:
+        movzx eax, byte ptr ds:[ADDR_DAYNIGHT_FADE_VALUE]
+        push eax
+        mov  eax, ADDR_DayNightFade
+        call eax
+        pop  eax
+        mov  byte ptr ds:[ADDR_DAYNIGHT_FADE_VALUE], al
+        ret
+    }
+}
+
+static void InstallAnimationRate(void)
+{
+    static const uint8_t pulse[] = { 0xA1, 0x90, 0x6C, 0x62, 0x00 };
+    static const uint8_t siren[] = { 0xA1, 0x5C, 0x6F, 0x62, 0x00 };
+    if (CheckBytes(PATCH_CRIME_PULSE, pulse, sizeof(pulse)))
+        PatchJmp(PATCH_CRIME_PULSE, (void *)Thunk_CrimePulse, 5);
+    if (CheckBytes(PATCH_SIREN_ANIM, siren, sizeof(siren)))
+        PatchJmp(PATCH_SIREN_ANIM, (void *)Thunk_SirenAnim, 5);
+    RedirectCall(CALL_EFFECT_COUNTERS, ADDR_EffectCounters, (void *)Thunk_EffectCounters);
+    RedirectCall(CALL_DAYNIGHT_FADE, ADDR_DayNightFade, (void *)Thunk_DayNightFade);
+}
+
+static int MonitorRefreshRate(void)
+{
+    DEVMODEA dm = { 0 };
+    dm.dmSize = sizeof(dm);
+    if (EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1)
+        return (int)dm.dmDisplayFrequency;
+    return 60;
 }
 
 static void InstallFrameLimiter(void)
@@ -154,6 +305,17 @@ static void InstallFrameLimiter(void)
     static const uint8_t jmp[] = { 0xEB, 0x21 };      /* never use the imprecise Asphyre sleep */
     WriteMem(PATCH_ASPHYRE_SLEEP_JAE, jmp, sizeof(jmp));
     Log("Frame limiter: %d game frames per second", g_cfg.gameFps);
+
+    g_renderFps = g_cfg.renderFps < 0 ? MonitorRefreshRate() : g_cfg.renderFps;
+    if (g_renderFps > 360) g_renderFps = 360;
+    static const uint8_t gate[] = { 0x80, 0x78, 0x12, 0x01, 0x0F, 0x85, 0x5F, 0x05, 0x00, 0x00 };
+    if (g_renderFps > g_cfg.gameFps && CheckBytes(PATCH_LOGIC_GATE, gate, sizeof(gate)) &&
+        PatchJmp(PATCH_LOGIC_GATE, (void *)Thunk_LogicGate, sizeof(gate)))
+    {
+        InstallAnimationRate();
+        Log("Render rate: %d frames per second (game logic: %d)", g_renderFps, g_cfg.gameFps);
+    } else
+        g_renderFps = 0;
 }
 
 void Perf_Install(void)

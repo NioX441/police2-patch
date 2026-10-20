@@ -115,6 +115,10 @@ static const char *g_defaultIni =
     "; second (original value). A precise frame limiter keeps the game speed constant.\r\n"
     "; 0 = original (imprecise) timer.\r\n"
     "GameFPS=30\r\n"
+    "; Frames drawn per second: auto (refresh rate of the monitor), a number such as 60 or\r\n"
+    "; 144, or 0 (one frame per game frame, original). The game logic keeps running at\r\n"
+    "; GameFPS; moving cars and people are interpolated between the game frames.\r\n"
+    "RenderFPS=auto\r\n"
     "\r\n"
     "[Gameplay]\r\n"
     "; Hard mode: criminals are stronger, you need more/better officers per mission.\r\n"
@@ -196,6 +200,8 @@ void LoadConfig(void)
     g_cfg.largeMemory      = GetPrivateProfileIntA("System", "LargeMemory", 1, ini);
     g_cfg.gameFps          = GetPrivateProfileIntA("Performance", "GameFPS", 30, ini);
     if (g_cfg.gameFps > 240) g_cfg.gameFps = 240;
+    GetPrivateProfileStringA("Performance", "RenderFPS", "auto", buf, sizeof(buf), ini);
+    g_cfg.renderFps = _stricmp(buf, "auto") == 0 ? -1 : atoi(buf);
     g_cfg.criminalStrength = IniDouble(ini, "Gameplay", "CriminalStrength", 2.5);
     if (g_cfg.criminalStrength < 1.0) g_cfg.criminalStrength = 1.0;
     if (g_cfg.criminalStrength > 5.0) g_cfg.criminalStrength = 5.0;
