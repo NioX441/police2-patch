@@ -130,7 +130,7 @@ static const char *g_defaultIni =
     "; 1 = cheat keys: Ctrl+Shift+M adds 1,000 to your budget,\r\n"
     ";     Ctrl+Shift+L raises the public safety level by 10 percentage points,\r\n"
     ";     Ctrl+Shift+1..8 starts a crime (1 robbery, 2 stabbing, 3 homicide, 4 burglary,\r\n"
-    ";     5 smuggling, 6 drug abuse, 7 terrorism, 8 riot, 9 car theft), Ctrl+Shift+0 a\r\n"
+    ";     5 smuggling, 6 drug abuse, 7 terrorism, 8 riot, 9 car theft), Ctrl+Shift+R a\r\n"
     ";     random crime.\r\n"
     "Cheats=1\r\n";
 

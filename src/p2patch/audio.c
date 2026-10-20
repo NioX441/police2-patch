@@ -81,6 +81,80 @@ static DWORD WINAPI Hook_BASS_StreamCreateFile(BOOL mem, const void *file, uint6
     return g_streamCreateFile(mem, file, offset, length, flags);
 }
 
+/* ---- Two music tracks at the same time -------------------------------------------------- */
+/* The game cross-fades between two music channels (0x0062F49C / 0x0062F4A0). When the music  */
+/* changes while both channels are still active and none is fading (a faded-out track that    */
+/* was never stopped), it stops only the quieter channel and starts the new track there - the */
+/* louder track keeps playing, so two tracks run at once. In that case the quieter channel is */
+/* now stopped first, and the game takes its normal path: fade out the old track, start the   */
+/* new one.                                                                                   */
+
+#define ADDR_MusicSwitch     0x0059F9B8
+#define ADDR_MUSIC_CHANNEL1  0x0062F49C   /* channel handles, syncs at +8 and +16 */
+#define ADDR_MUSIC_CHANNEL2  0x0062F4A0
+#define BASS_ATTRIB_VOL      2
+#define BASS_ACTIVE_PLAYING  1
+
+typedef DWORD (WINAPI *ChannelIsActive_t)(DWORD h);
+typedef BOOL  (WINAPI *ChannelIsSliding_t)(DWORD h, DWORD attrib);
+typedef BOOL  (WINAPI *ChannelGetAttribute_t)(DWORD h, DWORD attrib, float *value);
+typedef BOOL  (WINAPI *ChannelStop_t)(DWORD h);
+typedef BOOL  (WINAPI *ChannelRemoveSync_t)(DWORD h, DWORD sync);
+
+static ChannelIsActive_t     g_isActive;
+static ChannelIsSliding_t    g_isSliding;
+static ChannelGetAttribute_t g_getAttribute;
+static ChannelStop_t         g_stop;
+static ChannelRemoveSync_t   g_removeSync;
+
+static void StopMusicChannel(DWORD *slot)
+{
+    g_removeSync(*slot, slot[2]);          /* end-of-track and slide syncs of this channel */
+    g_removeSync(*slot, slot[4]);
+    g_stop(*slot);
+}
+
+static void __cdecl BeforeMusicSwitch(void)
+{
+    DWORD *c1 = (DWORD *)ADDR_MUSIC_CHANNEL1, *c2 = (DWORD *)ADDR_MUSIC_CHANNEL2;
+    if (!*c1 || !*c2) return;
+    if (g_isActive(*c1) != BASS_ACTIVE_PLAYING || g_isActive(*c2) != BASS_ACTIVE_PLAYING) return;
+    if (g_isSliding(*c1, BASS_ATTRIB_VOL) || g_isSliding(*c2, BASS_ATTRIB_VOL)) return;
+    float v1 = 0, v2 = 0;
+    g_getAttribute(*c1, BASS_ATTRIB_VOL, &v1);
+    g_getAttribute(*c2, BASS_ATTRIB_VOL, &v2);
+    StopMusicChannel(v1 <= v2 ? c1 : c2);
+}
+
+/* original first instructions: push ebp / mov ebp, esp / mov ecx, 0Bh (al = music type) */
+static __declspec(naked) void Thunk_MusicSwitch(void)
+{
+    __asm {
+        push eax
+        call BeforeMusicSwitch
+        pop  eax
+        push ebp
+        mov  ebp, esp
+        mov  ecx, 0x0B
+        push ADDR_MusicSwitch + 8
+        ret
+    }
+}
+
+static void InstallMusicFix(HMODULE bass)
+{
+    static const uint8_t prologue[] = { 0x55, 0x8B, 0xEC, 0xB9, 0x0B, 0x00, 0x00, 0x00 };
+    g_isActive     = (ChannelIsActive_t)GetProcAddress(bass, "BASS_ChannelIsActive");
+    g_isSliding    = (ChannelIsSliding_t)GetProcAddress(bass, "BASS_ChannelIsSliding");
+    g_getAttribute = (ChannelGetAttribute_t)GetProcAddress(bass, "BASS_ChannelGetAttribute");
+    g_stop         = (ChannelStop_t)GetProcAddress(bass, "BASS_ChannelStop");
+    g_removeSync   = (ChannelRemoveSync_t)GetProcAddress(bass, "BASS_ChannelRemoveSync");
+    if (g_isActive && g_isSliding && g_getAttribute && g_stop && g_removeSync &&
+        CheckBytes(ADDR_MusicSwitch, prologue, sizeof(prologue)) &&
+        PatchJmp(ADDR_MusicSwitch, (void *)Thunk_MusicSwitch, sizeof(prologue)))
+        Log("Music overlap fix installed");
+}
+
 void Audio_Install(void)
 {
     HMODULE bass = GetModuleHandleA("bass.dll");
@@ -89,6 +163,7 @@ void Audio_Install(void)
     g_getDeviceInfo = (GetDeviceInfo_t)GetProcAddress(bass, "BASS_GetDeviceInfo");
     g_setDevice     = (SetDevice_t)GetProcAddress(bass, "BASS_SetDevice");
     g_errorGetCode  = (ErrorGetCode_t)GetProcAddress(bass, "BASS_ErrorGetCode");
+    InstallMusicFix(bass);
     if (!g_setConfig || !g_getDeviceInfo || !g_setDevice || !g_errorGetCode) return;
     g_init = (Init_t)HookIat(IAT_BASS_Init, "bass.dll", "BASS_Init", (void *)Hook_BASS_Init);
     g_streamCreateFile = (StreamCreateFile_t)HookIat(IAT_BASS_StreamCreateFile, "bass.dll",

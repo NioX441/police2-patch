@@ -209,6 +209,7 @@ static LRESULT CALLBACK KeyboardProc(int code, WPARAM vk, LPARAM lp)
             static const int types[] = { -1, 0, 1, 2, 3, 4, 5, 7, 8, 6 };   /* key 0 = random */
             SpawnCrime(types[vk - '0']);
         }
+        if (vk == 'R' && g_cfg.cheats) SpawnCrime(-1);   /* Ctrl+Shift+0 is often taken by Windows */
         if (vk == VK_F11 && g_cfg.debugKeys) {   /* debug: toggle sprite culling (1 <-> 2) */
             g_cfg.fixSpriteCulling = g_cfg.fixSpriteCulling == 2 ? 1 : 2;
             Log("Debug: SpriteCulling=%d", g_cfg.fixSpriteCulling);
@@ -363,8 +364,114 @@ static void PatchBuildLabel(void)
     }
 }
 
+/* ---- New crimes away from running cases ------------------------------------------------ */
+/* The crime area (0x0060E590) is chosen at random among the 20 least safe map cells, so new  */
+/* crimes often started exactly where another case was still running. The search is now     */
+/* repeated (up to 8 times) while its result lies next to a running case.                    */
+
+#define ADDR_ChooseCrimeLocation  0x0060E590
+#define ADDR_CASELIST_VAR         0x00A9D820
+#define CASE_X                    0x0C
+#define CASE_STATE                0x39         /* 7 = escaped, 8 = closed */
+#define CRIME_DISTANCE            8            /* cells */
+#define LOCATION_TRIES            8
+
+/* a case stores three map points: crime location (+0x0C), and the two points of the search */
+static BOOL NearPoint(const uint8_t *c, int off, int x, int y)
+{
+    return abs(FIELD(c, off, int) - x) < CRIME_DISTANCE && abs(FIELD(c, off + 4, int) - y) < CRIME_DISTANCE;
+}
+
+static BOOL NearRunningCase(const int *p1, const int *p2)
+{
+    void *cases = *(void **)ADDR_CASELIST_VAR;
+    if (!cases) return FALSE;
+    for (int i = 0; i < ListCount(cases); i++) {
+        const uint8_t *c = ListItem(cases, i);
+        if (!c || c[CASE_STATE] >= 7) continue;
+        for (int off = CASE_X; off <= 0x1C; off += 8)
+            if (NearPoint(c, off, p1[0], p1[1]) || NearPoint(c, off, p2[0], p2[1])) return TRUE;
+    }
+    return FALSE;
+}
+
+/* original first instructions: push ebp / mov ebp, esp / push ecx / mov ecx, 10h */
+static __declspec(naked) void Orig_ChooseCrimeLocation(void)
+{
+    __asm {
+        push ebp
+        mov  ebp, esp
+        push ecx
+        mov  ecx, 0x10
+        push ADDR_ChooseCrimeLocation + 9
+        ret
+    }
+}
+
+/* params: the 6 stack parameters of the original call; params[4], params[5] = results */
+static int __cdecl ChooseCrimeLocation(const uint32_t *params, uint32_t ra, uint32_t rd, uint32_t rc)
+{
+    int found = 0;
+    for (int t = 0; t < LOCATION_TRIES; t++) {
+        __asm {
+            mov  esi, params
+            push dword ptr [esi + 20]
+            push dword ptr [esi + 16]
+            push dword ptr [esi + 12]
+            push dword ptr [esi + 8]
+            push dword ptr [esi + 4]
+            push dword ptr [esi]
+            mov  eax, ra
+            mov  edx, rd
+            mov  ecx, rc
+            call Orig_ChooseCrimeLocation
+            movzx eax, al
+            mov  found, eax
+        }
+        if (!found || !NearRunningCase((const int *)params[5], (const int *)params[4])) break;
+    }
+    return found;
+}
+
+/* register call: eax, edx, ecx + 6 stack parameters (callee removes them, ret 18h) */
+static __declspec(naked) void Thunk_ChooseCrimeLocation(void)
+{
+    __asm {
+        push ecx
+        push edx
+        push eax
+        push esp
+        add  dword ptr [esp], 16        /* -> first stack parameter */
+        call ChooseCrimeLocation
+        add  esp, 16
+        ret  0x18
+    }
+}
+
+/* ---- Crime window title ------------------------------------------------------------------- */
+/* TGUIpCrime.ResetData looks up the title with the key "GUI CRIME"; the text file has it as  */
+/* "[GUI CRIME]" (Tatort), so the window showed the raw key.                                  */
+
+#define CRIME_TITLE_KEY  0x005D230A   /* mov edx, offset UnicodeString "GUI CRIME" (+1 = imm) */
+#define CRIME_TITLE_TEXT L"[GUI CRIME]"
+
+static struct { uint16_t cp, elem; int32_t ref, len; wchar_t s[16]; } g_ustrCrimeTitle =
+    { 1200, 2, -1, sizeof(CRIME_TITLE_TEXT) / 2 - 1, CRIME_TITLE_TEXT };
+
+static void PatchCrimeTitle(void)
+{
+    uint32_t oldKey = 0x005D2C70, key = (uint32_t)(uintptr_t)g_ustrCrimeTitle.s;
+    if (*(const uint8_t *)CRIME_TITLE_KEY == 0xBA && CheckBytes(CRIME_TITLE_KEY + 1, &oldKey, 4))
+        WriteMem(CRIME_TITLE_KEY + 1, &key, 4);
+}
+
 void Gameplay_Install(void)
 {
+    PatchCrimeTitle();
+    static const uint8_t locPrologue[] = { 0x55, 0x8B, 0xEC, 0x51, 0xB9, 0x10, 0x00, 0x00, 0x00 };
+    if (CheckBytes(ADDR_ChooseCrimeLocation, locPrologue, sizeof(locPrologue)) &&
+        PatchJmp(ADDR_ChooseCrimeLocation, (void *)Thunk_ChooseCrimeLocation, sizeof(locPrologue)))
+        Log("Crime location fix installed");
     PatchBuildLabel();
     if (g_cfg.carTheft) EnableCarTheft();
     static const uint8_t cmp6[] = { 0x80, 0xFB, 0x06, 0x75, 0x02 };
