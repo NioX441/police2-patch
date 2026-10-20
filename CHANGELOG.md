@@ -2,6 +2,15 @@
 
 All notable changes of the Police 2 Community Patch.
 
+## [1.3.0] - 2026-10-20
+
+### Added
+- Frames are drawn at the refresh rate of the monitor (`RenderFPS`, default `auto`; `0` =
+  original). The game logic keeps running at 30 game frames per second: frames in between only
+  draw, cars and people are interpolated between the game frames (one game frame behind, but
+  smooth). Camera movement is smooth at the full frame rate. Blinking markers, siren lights
+  and the day/night fade keep their original speed.
+
 ## [1.2.1] - 2026-10-19
 
 ### Added
