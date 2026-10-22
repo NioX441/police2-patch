@@ -1,156 +1,83 @@
 # Changelog
 
-All notable changes of the Police 2 Community Patch.
+Everything the Police 2 Community Patch changes compared to the original game (build 488).
 
-## [1.3.1] - 2026-10-22
+## Running on current Windows
 
-### Fixed
-- The arrows from a team to its crime scene moved too fast at frame rates above 30: their
-  offset advanced on every drawn frame. It now advances once per game frame.
-- Two crimes (e.g. two riots) could still start at the same address: the spacing check only
-  looked at the two search points of the new crime, not at the crime spot itself (the place
-  rioters walk to). All three points are checked now.
-- Two music tracks could still play at the same time when the music changed during a
-  cross-fade (calm music fading in, then a crime starts the action music): the game kept the
-  louder track playing. The quieter track is now stopped and the other one faded out also
-  while a cross-fade is running.
+- Fullscreen works on big screens again. On anything wider or taller than 2048 pixels the
+  game used to quit with "Failed initializing Asphyre device". Fullscreen is now a borderless
+  window at your monitor's resolution, and the picture is scaled up from up to 2048 pixels.
+- The picture goes through Direct3D 11 and is scaled with a proper filter instead of blocky
+  pixel doubling. You can pick bicubic, sharp, bilinear or nearest in `p2patch.ini`.
+- In windowed mode the window is scaled to a sensible size and centred, instead of a tiny
+  1024×768 window in the top-left corner.
+- The game no longer needs administrator rights. On the first start the patch makes a copy
+  of `police2.exe` called `police2_niox.exe`, which runs without the UAC prompt and can use
+  4 GB of memory instead of 2 GB. Your original exe is not touched.
+- Save games and options go to `%LOCALAPPDATA%\Police 2 Community Patch`. Old save games in
+  the game folder are still found.
+- Sound now follows the Windows default output device. If your speakers were off when the
+  game started, you used to get no sound at all.
 
-## [1.3.0] - 2026-10-20
+## Graphics
 
-### Added
-- Frames are drawn at the refresh rate of the monitor (`RenderFPS`, default `auto`; `0` =
-  original). The game logic keeps running at 30 game frames per second: frames in between only
-  draw, cars and people are interpolated between the game frames (one game frame behind, but
-  smooth). Camera movement is smooth at the full frame rate. Blinking markers, siren lights
-  and the day/night fade keep their original speed.
+- Frames are drawn at your monitor's refresh rate. The game logic still runs at 30 steps per
+  second as intended; cars and people are smoothly interpolated in between. Blinking
+  markers, siren lights, the moving arrows to a crime scene and the day/night change keep
+  their original speed. Set `RenderFPS=0` for the original behaviour.
+- Shadows no longer vanish near the screen edges, including the strip along the bottom
+  where they were always missing.
+- The ground and buildings no longer go black after Alt+Tab, the lock screen or a UAC
+  prompt, and the black flashes caused by running out of memory are gone.
+- No more thin lines between map tiles when zoomed.
+- When zoomed out, the camera can no longer show a black area beyond the right or bottom
+  edge of the city.
+- The selection square shows up at every zoom level, and clicks on the map (patrol routes,
+  checkpoints) work when zoomed out.
+- SWAT, riot police and undercover officers no longer look like normal patrol officers for
+  a moment after getting out of a vehicle.
 
-### Fixed
-- Police cars sometimes slid across buildings until they reached a road: when no route to the
-  destination existed (destination not on a road), the patch let them drive in a straight
-  line. They now drive to the nearest reachable road cell at the destination, or stop where
-  they are if there is none.
+## Performance
 
-## [1.2.1] - 2026-10-19
+- The game runs at an even speed. The original timer jittered between 17 and 35 ms per
+  frame, so cars sped up and slowed down, especially while scrolling.
+- Finding the map cell under the mouse used to check all 82,944 cells several times per
+  frame. That alone ate most of the frame time. Together with drawing only what is on
+  screen, a frame on a big city now takes about 6 ms instead of 18 ms.
 
-### Added
-- Car theft: the crime type was prepared in the game (name, dispatcher message, patrol
-  detection) but switched off - the game replaced it with homicide and created no criminal
-  for it. It now occurs like the other street crimes (`CarTheft`, default on).
-- Cheat Ctrl+Shift+1 ... 9: start a crime of a chosen type at the next game minute
-  (1 robbery, 2 stabbing, 3 homicide, 4 burglary, 5 smuggling, 6 drug abuse, 7 terrorism,
-  8 riot, 9 car theft), Ctrl+Shift+R (or 0): random crime.
+## Units and traffic
 
-### Fixed
-- Clicks on the map (patrol routes, checkpoints) were ignored at the farthest zoom levels.
-- All police cars refuelled at the same moment; each car now has its own fixed time.
-- New crimes could start exactly where another case was still running.
-- The crime window of an unreported riot showed "GUI CRIME" instead of its title (the game
-  looked up the text with a wrong key).
-- Two music tracks could play at the same time: when the music changed while a faded-out
-  track was still active, the playing track was not faded out.
-- Officers injured on patrol or at a checkpoint lay on the street (with the duty icon) until
-  they were back from hospital; they are now taken away after 10 seconds.
-- Teams with an officer in hospital were offered when sending units to a crime.
-- No sound when the speakers were switched on after the game had started: the output now
-  follows the Windows default device, and without any device at start the game waits for one.
-- The selection square was missing at the farthest zoom level (the game skipped it below
-  zoom 0.75) and near the right and bottom part of the map at the second zoom level (the
-  mouse-to-map conversion only worked for part of the map when zoomed out).
+- Officers no longer end up in two teams at once after coming back from hospital or
+  training. That was the reason units got stuck at missions or never came back to the
+  station. Save games with such officers are repaired when you load them.
+- Officers on foot no longer stand still forever when they can't reach their destination,
+  and the route search no longer freezes the game for a moment.
+- Police cars without a route no longer stand around recalculating every frame, and they no
+  longer slide across buildings. They drive to the nearest road at the destination, or stay
+  put if there is none.
+- Traffic jams where vehicles wait for each other forever now clear up after a while.
+- Officers injured on patrol or at a checkpoint are taken away after a few seconds instead
+  of lying in the street until they're back from hospital. Teams with an injured officer no
+  longer show up in the list when you send units to a crime.
+- Police cars refuel every 20 game minutes, each car at its own time. Before, they all
+  refuelled at once and sometimes twice in a row.
 
-## [1.2.0] - 2026-10-19
+## Crimes and music
 
-### Added
-- `police2_niox.exe`: police2.exe creates a copy of itself in the game folder that can use
-  4 GB of memory instead of 2 GB and needs no administrator rights, and starts it
-  automatically. It can also be started directly (no UAC prompt). police2.exe itself is not
-  changed (`LargeMemory`).
-- Save games and options are stored in `%LOCALAPPDATA%\Police 2 Community Patch`; save games
-  in the game folder are still found. Works the same with and without administrator rights
-  (`UserDataFolder`).
+- New crimes no longer start right where another case is still running.
+- The crime window of an unreported riot shows its title instead of "GUI CRIME".
+- Car theft is back. The developers had prepared it but switched it off.
+- Only one music track plays at a time. Before, the calm and the action music could end up
+  playing on top of each other.
 
-### Changed
-- Hard mode: no limit of 19 crimes per day any more. Additional crimes wait in a queue and
-  are planned as soon as a crime slot of the game becomes free. `CrimeFrequency` now ranges
-  from 1.0 to 8.0, default 4.0 (40 instead of 10 crimes per day on the highest difficulty).
+## Extras
 
-### Fixed
-- Shadows were missing along the bottom edge of the screen. The game draws the shadow by
-  drawing the layer with buildings and trees a second time, darkened and moved up by 25
-  pixels; the bottom 25 pixels never got a shadow. The shadow is now rendered from a copy of
-  the layer with the camera moved accordingly.
-- The game ran at the 2 GB memory limit of 32-bit programs: with a big city loaded, the
-  largest free block of address space was often below 50 MB, so loading or restoring textures
-  could fail (black ground for a moment, possible crashes). With `police2_niox.exe` about
-  2 GB stay free.
-- Ground, buildings and overlays stayed black after Windows had taken away the graphics
-  memory (Alt+Tab, UAC prompt, lock screen, display change) until the camera was moved.
-  They are now redrawn immediately.
-
-## [1.1.0] - 2026-10-18
-
-### Added
-- "build 488 - Niox Patch" in the main menu.
-- Cheat Ctrl+Shift+L: public safety level +10 percentage points.
-- Hard mode: considerably more crimes per day and therefore more cases at the same time
-  (`CrimeFrequency`, default 2.5, at most 19 crimes per day).
-- The two latent bugs found in 1.0.0 are now handled safely and logged (see Fixed).
-- `[Debug] Keys=1` enables developer hotkeys (Ctrl+Shift+F11 toggles the sprite visibility
-  test, for comparisons).
-
-### Changed
-- Money cheat (Ctrl+Shift+M) adds 1,000 instead of 100,000. The option is now called `Cheats`.
-
-### Fixed
-- Zoomed out near the right or bottom edge of the city the view showed a black area with
-  buildings and shadows cut off at a straight line: the camera limits ignored the zoom factor.
-- Thin lines between map tiles when zoomed: texture addressing was left at WRAP, so bilinear
-  filtering mixed in texels of the opposite texture border. CLAMP addressing is used now.
-- Police cars refuelled twice in a row: fuel was charged at minute :00, :29 and :58 of every
-  hour (only two minutes between :58 and :00). Now evenly every 20 game minutes (same rate).
-- SWAT, riot police and undercover officers looked like patrol officers for a moment after
-  leaving a vehicle/the helicopter (their image was chosen before the type was set).
-- Dragging the camera slowed the game down: when the camera moves, the game redraws all
-  static layers, and the sprite engines drew up to 1024 pixels beyond the visible area.
-  Sprites are now limited to the visible area (identical image), which almost halves the cost.
-- The HUD requested the screen position of map cell -1,-1 ("nothing selected") every frame and
-  got an undefined value; such requests now return a position outside the screen, other
-  invalid cells are clamped. Logged once per call site.
-- The "add/remove officer" buttons of a team window no longer act on a random team when the
-  team does not exist any more (click ignored and logged).
-
-## [1.0.0] - 2026-10-18
-
-First release. Requires Police 2 build 488 (official update 4.8.8).
-
-### Added
-- Drop-in installation: `msimg32.dll` + `p2patch.ini` in the game folder, no game file is
-  modified.
-- Configuration file `p2patch.ini` (created automatically with defaults).
-- Direct3D 11 output with selectable scaling filter (bicubic, sharp, bilinear, nearest),
-  flip-model swap chain and V-Sync.
-- Scalable, centred window in windowed mode; DPI awareness.
-- Optional hard mode: criminals 2.5× stronger (`HardMode`, `CriminalStrength`).
-- Money cheat: Ctrl+Shift+M adds 100,000 (`MoneyCheat`).
-- Log file `p2patch.log` with the applied fixes and previously swallowed game errors.
-
-### Fixed
-- Fullscreen failed with "Failed initializing Asphyre device" on screens wider or taller than
-  2048 pixels (Direct3D 7 render target limit on current Windows). Fullscreen is now a
-  borderless window at native resolution with internal rendering up to 2048 pixels.
-- Shadows and other large sprites disappeared near the left, right and bottom edges of the
-  screen (wrong visibility test in the sprite engine).
-- Officers returning from hospital or training stayed in their old team while being marked as
-  available; assigning them again put them into two teams, which made units hang at missions
-  or never return to the station. Broken save games are repaired when loaded.
-- Officers on foot stood still forever when their destination was unreachable, and froze when
-  they reached the end of their route while their destination had changed.
-- Pedestrian route search flooded the entire map for unreachable destinations (short freezes).
-- Police cars without a route stood still and repeated the route search every frame.
-- The car route search overwrote global crossroad markers of the map.
-- Traffic deadlocks (vehicles waiting for each other) blocked civil and police vehicles forever.
-- The HUD tested all 82,944 map cells several times per frame to find the cell under the mouse,
-  which slowed down the whole game (especially while dragging the camera). Frame time dropped
-  from about 18 ms to about 6 ms.
-- Uneven game speed: the original timer produced frame intervals between 17 and 35 ms; a
-  precise frame limiter now keeps the intended 30 frames per second.
-- Game errors were silently ignored by an empty exception handler; they are logged now.
+- Hard mode (`HardMode=1`): criminals are stronger and there are many more crimes per day,
+  with no limit of 19 any more. Both can be tuned in `p2patch.ini`.
+- Cheats: Ctrl+Shift+M for money, Ctrl+Shift+L for public safety, Ctrl+Shift+1 to 9 to
+  start a crime of a chosen type and Ctrl+Shift+R for a random one. `Cheats=0` turns them
+  off.
+- The main menu shows "build 488 - Niox Patch".
+- `p2patch.log` lists what the patch did and any game errors, which the original silently
+  swallowed. A few hidden bugs in the original code (team buttons acting on a dissolved
+  team, positions of invalid map cells) are caught and logged instead of misbehaving.
