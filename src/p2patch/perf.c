@@ -208,6 +208,9 @@ static __declspec(naked) void Thunk_LogicGate(void)
 #define ADDR_EffectCounters   0x005A3974
 #define CALL_DAYNIGHT_FADE    0x005F5432   /* RenderEvent: call 005E3BB4                    */
 #define ADDR_DayNightFade     0x005E3BB4
+#define PATCH_ARROW_ANIM      0x005ECC53   /* NiceConnectionWithArrow: arrow offset counter    */
+#define ARROW_ANIM_NEXT       0x005ECC58
+#define ARROW_ANIM_SKIP       0x005ECC6D
 
 static __declspec(naked) void Thunk_CrimePulse(void)
 {
@@ -233,6 +236,21 @@ static __declspec(naked) void Thunk_SirenAnim(void)
         ret
     skip:
         push SIREN_ANIM_SKIP
+        ret
+    }
+}
+
+/* moving arrows from a team to its crime scene */
+static __declspec(naked) void Thunk_ArrowAnim(void)
+{
+    __asm {
+        cmp  g_skipLogic, 0
+        jne  skip
+        mov  eax, dword ptr ds:[0x00626D88]
+        push ARROW_ANIM_NEXT
+        ret
+    skip:
+        push ARROW_ANIM_SKIP
         ret
     }
 }
@@ -274,10 +292,13 @@ static void InstallAnimationRate(void)
 {
     static const uint8_t pulse[] = { 0xA1, 0x90, 0x6C, 0x62, 0x00 };
     static const uint8_t siren[] = { 0xA1, 0x5C, 0x6F, 0x62, 0x00 };
+    static const uint8_t arrow[] = { 0xA1, 0x88, 0x6D, 0x62, 0x00 };
     if (CheckBytes(PATCH_CRIME_PULSE, pulse, sizeof(pulse)))
         PatchJmp(PATCH_CRIME_PULSE, (void *)Thunk_CrimePulse, 5);
     if (CheckBytes(PATCH_SIREN_ANIM, siren, sizeof(siren)))
         PatchJmp(PATCH_SIREN_ANIM, (void *)Thunk_SirenAnim, 5);
+    if (CheckBytes(PATCH_ARROW_ANIM, arrow, sizeof(arrow)))
+        PatchJmp(PATCH_ARROW_ANIM, (void *)Thunk_ArrowAnim, 5);
     RedirectCall(CALL_EFFECT_COUNTERS, ADDR_EffectCounters, (void *)Thunk_EffectCounters);
     RedirectCall(CALL_DAYNIGHT_FADE, ADDR_DayNightFade, (void *)Thunk_DayNightFade);
 }

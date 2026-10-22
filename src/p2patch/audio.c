@@ -83,15 +83,17 @@ static DWORD WINAPI Hook_BASS_StreamCreateFile(BOOL mem, const void *file, uint6
 
 /* ---- Two music tracks at the same time -------------------------------------------------- */
 /* The game cross-fades between two music channels (0x0062F49C / 0x0062F4A0). When the music  */
-/* changes while both channels are still active and none is fading (a faded-out track that    */
-/* was never stopped), it stops only the quieter channel and starts the new track there - the */
-/* louder track keeps playing, so two tracks run at once. In that case the quieter channel is */
-/* now stopped first, and the game takes its normal path: fade out the old track, start the   */
-/* new one.                                                                                   */
+/* changes while both channels are still active - a faded-out track that was never stopped,   */
+/* or a cross-fade still running (calm music fading in, then a crime starts the action        */
+/* music) - it stops only the quieter channel and starts the new track there: the louder      */
+/* track keeps playing, so two tracks run at once. In that case the quieter channel is now    */
+/* stopped first, and the game takes its normal path: fade out the other track, start the new */
+/* one.                                                                                       */
 
 #define ADDR_MusicSwitch     0x0059F9B8
 #define ADDR_MUSIC_CHANNEL1  0x0062F49C   /* channel handles, syncs at +8 and +16 */
 #define ADDR_MUSIC_CHANNEL2  0x0062F4A0
+#define ADDR_MUSIC_TYPE      0x0062F4B8   /* type of the last started track */
 #define BASS_ATTRIB_VOL      2
 #define BASS_ACTIVE_PLAYING  1
 
@@ -114,12 +116,14 @@ static void StopMusicChannel(DWORD *slot)
     g_stop(*slot);
 }
 
-static void __cdecl BeforeMusicSwitch(void)
+static void __cdecl BeforeMusicSwitch(DWORD type)
 {
     DWORD *c1 = (DWORD *)ADDR_MUSIC_CHANNEL1, *c2 = (DWORD *)ADDR_MUSIC_CHANNEL2;
     if (!*c1 || !*c2) return;
     if (g_isActive(*c1) != BASS_ACTIVE_PLAYING || g_isActive(*c2) != BASS_ACTIVE_PLAYING) return;
-    if (g_isSliding(*c1, BASS_ATTRIB_VOL) || g_isSliding(*c2, BASS_ATTRIB_VOL)) return;
+    /* back to the track that is fading out: the game reverses the cross-fade itself */
+    if ((uint8_t)type == *(uint8_t *)ADDR_MUSIC_TYPE &&
+        (g_isSliding(*c1, BASS_ATTRIB_VOL) || g_isSliding(*c2, BASS_ATTRIB_VOL))) return;
     float v1 = 0, v2 = 0;
     g_getAttribute(*c1, BASS_ATTRIB_VOL, &v1);
     g_getAttribute(*c2, BASS_ATTRIB_VOL, &v2);
@@ -130,7 +134,7 @@ static void __cdecl BeforeMusicSwitch(void)
 static __declspec(naked) void Thunk_MusicSwitch(void)
 {
     __asm {
-        push eax
+        push eax                        /* al = music type, also the argument */
         call BeforeMusicSwitch
         pop  eax
         push ebp

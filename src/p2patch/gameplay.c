@@ -382,7 +382,7 @@ static BOOL NearPoint(const uint8_t *c, int off, int x, int y)
     return abs(FIELD(c, off, int) - x) < CRIME_DISTANCE && abs(FIELD(c, off + 4, int) - y) < CRIME_DISTANCE;
 }
 
-static BOOL NearRunningCase(const int *p1, const int *p2)
+static BOOL NearRunningCase(const int *const pts[3])
 {
     void *cases = *(void **)ADDR_CASELIST_VAR;
     if (!cases) return FALSE;
@@ -390,7 +390,8 @@ static BOOL NearRunningCase(const int *p1, const int *p2)
         const uint8_t *c = ListItem(cases, i);
         if (!c || c[CASE_STATE] >= 7) continue;
         for (int off = CASE_X; off <= 0x1C; off += 8)
-            if (NearPoint(c, off, p1[0], p1[1]) || NearPoint(c, off, p2[0], p2[1])) return TRUE;
+            for (int k = 0; k < 3; k++)
+                if (NearPoint(c, off, pts[k][0], pts[k][1])) return TRUE;
     }
     return FALSE;
 }
@@ -428,7 +429,9 @@ static int __cdecl ChooseCrimeLocation(const uint32_t *params, uint32_t ra, uint
             movzx eax, al
             mov  found, eax
         }
-        if (!found || !NearRunningCase((const int *)params[5], (const int *)params[4])) break;
+        /* results: ecx = crime spot (case +0x0C), params[4], params[5] = the other two points */
+        const int *pts[3] = { (const int *)rc, (const int *)params[4], (const int *)params[5] };
+        if (!found || !NearRunningCase(pts)) break;
     }
     return found;
 }

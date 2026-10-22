@@ -2,6 +2,19 @@
 
 All notable changes of the Police 2 Community Patch.
 
+## [1.3.1] - 2026-10-22
+
+### Fixed
+- The arrows from a team to its crime scene moved too fast at frame rates above 30: their
+  offset advanced on every drawn frame. It now advances once per game frame.
+- Two crimes (e.g. two riots) could still start at the same address: the spacing check only
+  looked at the two search points of the new crime, not at the crime spot itself (the place
+  rioters walk to). All three points are checked now.
+- Two music tracks could still play at the same time when the music changed during a
+  cross-fade (calm music fading in, then a crime starts the action music): the game kept the
+  louder track playing. The quieter track is now stopped and the other one faded out also
+  while a cross-fade is running.
+
 ## [1.3.0] - 2026-10-20
 
 ### Added
