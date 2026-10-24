@@ -54,7 +54,8 @@ Everything the Police 2 Community Patch changes compared to the original game (b
   and the route search no longer freezes the game for a moment.
 - Police cars without a route no longer stand around recalculating every frame, and they no
   longer slide across buildings. They drive to the nearest road at the destination, or stay
-  put if there is none.
+  put if there is none. A car that ended up next to the road, on a sidewalk or a lawn,
+  drives back onto the road instead of being stuck there for good.
 - Traffic jams where vehicles wait for each other forever now clear up after a while.
 - Officers injured on patrol or at a checkpoint are taken away after a few seconds instead
   of lying in the street until they're back from hospital. Teams with an injured officer no

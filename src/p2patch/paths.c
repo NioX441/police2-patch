@@ -23,11 +23,14 @@
  *      - When no route is found, an empty route is returned. The car then stands still and
  *        repeats the (expensive) search every frame. We retry with the other start
  *        directions and finally drive to the nearest reachable road cell at the destination.
+ *      - A car standing off the road (sidewalk, lawn) never finds a route; it first drives
+ *        back onto the nearest road cell.
  */
 #include "patch.h"
 #include "game.h"
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define N_CELLS (MAP_SIZE * MAP_SIZE)
 
@@ -228,6 +231,8 @@ static __declspec(naked) void Thunk_WalkerPathEnd(void)
 
 #define CAR_DEST_RADIUS 10      /* cells around an unreachable destination */
 #define CAR_DEST_TRIES  16      /* route searches at most */
+#define CAR_ROAD_RADIUS 3       /* cells around a car that stands off the road */
+#define CAR_ROAD_TRIES  3       /* road cells tried from there */
 
 static uint8_t g_inout[N_CELLS];
 
@@ -260,39 +265,46 @@ static void *CallCarAStar(int startX, int startY, int destX, int *len, int dir, 
     return r;
 }
 
-static void *__cdecl CarAStar(int startX, int startY, int destX, int *len, int dir, int destY)
+/* cars drive on road (3) and crossing (2) cells */
+static __inline BOOL CarCell(int x, int y)
 {
-    SaveInOut();
-    void *list = CallCarAStar(startX, startY, destX, len, dir, destY);
-    RestoreInOut();
-    if (list && ListCount(list) >= 2) return list;
+    if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) return FALSE;
+    uint8_t t = Cell(x, y)[CELL_TYPE];
+    return t == 2 || t == 3;
+}
 
-    for (int d = 1; d <= 4; d++) {
-        if (d == dir) continue;
-        if (list) DelphiFree(list);
-        list = CallCarAStar(startX, startY, destX, len, d, destY);
+/* the original search, retried with the other start directions; NULL if there is no route */
+static void *TryCarRoute(int startX, int startY, int destX, int destY, int *len, int dir)
+{
+    for (int d = dir, i = 0; i <= 4; d = ++i) {
+        if (i > 0 && d == dir) continue;
+        void *list = CallCarAStar(startX, startY, destX, len, d, destY);
         RestoreInOut();
         if (list && ListCount(list) >= 2) {
-            Log("Car route %d,%d -> %d,%d found with start direction %d instead of %d",
-                startX, startY, destX, destY, d, dir);
+            if (d != dir)
+                Log("Car route %d,%d -> %d,%d found with start direction %d instead of %d",
+                    startX, startY, destX, destY, d, dir);
             return list;
         }
+        if (list) DelphiFree(list);
     }
+    return NULL;
+}
 
-    /* No route: the destination is usually not on a road (e.g. a crime on a sidewalk or in a
-       courtyard). Route to the nearest cell of the same kind as the car's start cell instead.
-       (The patch used to fall back to a straight line here, which let cars slide over
-       buildings.) */
-    if (list) DelphiFree(list);
-    uint8_t roadType = Cell(startX, startY)[CELL_TYPE];
+/* No route: the destination is usually not on a road (e.g. a crime on a sidewalk or in a
+   courtyard). Route to the nearest road cell around it instead. (The patch used to fall back
+   to a straight line here, which let cars slide over buildings.) */
+static void *CarRouteNearDest(int startX, int startY, int destX, int destY, int *len, int dir)
+{
+    void *list = TryCarRoute(startX, startY, destX, destY, len, dir);
+    if (list) return list;
     int tries = 0;
     for (int r = 1; r <= CAR_DEST_RADIUS && tries < CAR_DEST_TRIES; r++) {
         for (int dx = -r; dx <= r && tries < CAR_DEST_TRIES; dx++) {
             for (int dy = -r; dy <= r && tries < CAR_DEST_TRIES; dy++) {
                 if (max(abs(dx), abs(dy)) != r) continue;           /* ring of radius r */
                 int x = destX + dx, y = destY + dy;
-                if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) continue;
-                if (Cell(x, y)[CELL_TYPE] != roadType) continue;
+                if (!CarCell(x, y)) continue;
                 tries++;
                 list = CallCarAStar(startX, startY, x, len, dir, y);
                 RestoreInOut();
@@ -302,6 +314,48 @@ static void *__cdecl CarAStar(int startX, int startY, int destX, int *len, int d
                     return list;
                 }
                 if (list) DelphiFree(list);
+            }
+        }
+    }
+    return NULL;
+}
+
+/* puts a waypoint at the front of a route */
+static void PrependWayPoint(void *list, int x, int y)
+{
+    NewWayPoint(list, x, y);
+    void **items = *(void ***)((uint8_t *)list + 4);
+    int n = ListCount(list);
+    void *wp = items[n - 1];
+    memmove(items + 1, items, (n - 1) * sizeof(void *));
+    items[0] = wp;
+}
+
+static void *__cdecl CarAStar(int startX, int startY, int destX, int *len, int dir, int destY)
+{
+    SaveInOut();
+    void *list = CarRouteNearDest(startX, startY, destX, destY, len, dir);
+    if (list) return list;
+
+    /* A car standing next to the road (e.g. pushed onto a sidewalk or a lawn) never finds a
+       route from there: drive back onto the nearest road cell first. */
+    if (!CarCell(startX, startY)) {
+        int tries = 0;
+        for (int r = 1; r <= CAR_ROAD_RADIUS && tries < CAR_ROAD_TRIES; r++) {
+            for (int dx = -r; dx <= r && tries < CAR_ROAD_TRIES; dx++) {
+                for (int dy = -r; dy <= r && tries < CAR_ROAD_TRIES; dy++) {
+                    if (max(abs(dx), abs(dy)) != r) continue;
+                    int x = startX + dx, y = startY + dy;
+                    if (!CarCell(x, y)) continue;
+                    tries++;
+                    list = CarRouteNearDest(x, y, destX, destY, len, dir);
+                    if (list) {
+                        PrependWayPoint(list, startX, startY);
+                        Log("Car at %d,%d is off the road, drives back onto the road at %d,%d",
+                            startX, startY, x, y);
+                        return list;
+                    }
+                }
             }
         }
     }
