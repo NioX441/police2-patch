@@ -10,8 +10,7 @@ modified or shipped** – the game executable stays untouched.
 
 ## Installation
 
-1. Make sure the official update 4.8.8 (build 488) is installed. The game folder of the
-   retail version contains `police2patch488.exe` for this; the start menu shows "build 488"
+1. Make sure the official update 4.8.8 (build 488) is installed. The start menu shows "build 488"
    in the lower right corner.
 2. Copy `msimg32.dll` and `p2patch.ini` into the game folder
    (default: `C:\Program Files (x86)\Police 2 - Recht und Ordnung`).
